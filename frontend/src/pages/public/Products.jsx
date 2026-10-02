@@ -67,7 +67,7 @@ export default function Products() {
           (!category || ids.includes(String(p.categoryId))) &&
           p.price <= maxPrice &&
           (p.rating || 0) >= Number(rating) &&
-          (!mode || p.tryOnType === mode),
+          (!mode || p.accessoryKind === mode || (mode === 'jewelry' && ['earrings', 'forehead'].includes(p.accessoryKind))),
       )
       .sort((a, b) =>
         sort === 'price-asc'
@@ -156,9 +156,8 @@ export default function Products() {
         }}
       >
         <option value="">All experiences</option>
-        <option value="CLOTHING">Clothing prototype</option>
-        <option value="SUNGLASSES">Sunglasses overlay</option>
-        <option value="JEWELRY">Jewelry overlay</option>
+        <option value="sunglasses">Sunglasses face AR</option>
+        <option value="jewelry">Head / face jewelry AR</option>
       </Select>
     </>
   );

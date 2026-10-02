@@ -2,15 +2,29 @@ import { Heart, ScanLine, ArrowUpRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { Badge, IconButton, Price, Rating } from '../common/UI';
+import { supportsFaceAR } from '../../data/faceAccessories';
+import { useState } from 'react';
 
 export function ProductImage({ product, className = '', ...props }) {
+  const [failedSrc, setFailedSrc] = useState(null);
+  const sunglasses = product.accessoryKind === 'sunglasses';
+  if (sunglasses && (!product.imageUrl || failedSrc === product.imageUrl))
+    return (
+      <span role="img" aria-label={`${product.name}: product photo unavailable`}>
+        Product photo unavailable
+      </span>
+    );
   return (
     <img
-      className={className}
+      className={`${className}${sunglasses ? ' sunglasses-product-photo' : ''}`}
       src={product.imageUrl || '/assets/product.svg'}
       alt={product.name}
       loading="lazy"
       onError={(e) => {
+        if (sunglasses) {
+          setFailedSrc(product.imageUrl);
+          return;
+        }
         if (!e.currentTarget.src.endsWith('/assets/product.svg'))
           e.currentTarget.src = '/assets/product.svg';
       }}
@@ -37,11 +51,13 @@ export default function ProductCard({ product }) {
         >
           <Heart size={17} fill={wished ? 'currentColor' : 'none'} />
         </IconButton>
-        <Link className="product-try" to={`/try-on?product=${product.id}`}>
-          <ScanLine size={15} />
-          Try it on
-          <ArrowUpRight size={15} />
-        </Link>
+        {supportsFaceAR(product) && (
+          <Link className="product-try" to={`/try-on?productId=${product.id}`}>
+            <ScanLine size={15} />
+            Try it on
+            <ArrowUpRight size={15} />
+          </Link>
+        )}
       </div>
       <div className="product-meta">
         <span>

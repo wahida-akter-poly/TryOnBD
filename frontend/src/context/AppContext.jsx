@@ -4,10 +4,11 @@ import { services } from '../services';
 import { errorMessage } from '../services/api';
 import { loadState, saveState } from '../utils/storage';
 import { localId } from '../utils/format';
+import { migrateFaceCatalog } from '../data/faceAccessories';
 
 const Context = createContext(null);
 export function AppProvider({ children }) {
-  const [state, setState] = useState(() => loadState(seed));
+  const [state, setState] = useState(() => migrateFaceCatalog(loadState(seed), seed));
   const [role, setRole] = useState('customer');
   const [identity, setIdentity] = useState(() => {
     try {

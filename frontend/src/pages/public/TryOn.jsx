@@ -6,428 +6,748 @@ import {
   ScanLine,
   RotateCcw,
   Download,
-  ImagePlus,
-  X,
-  Check,
-  Shirt,
   Glasses,
   Gem,
-  Sparkles,
   ShoppingBag,
   Save,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { useAsync } from '../../hooks/useAsync';
-import { Badge, Button, ErrorState, IconButton, Select, Tabs } from '../../components/common/UI';
-import DemoNotice from '../../components/common/DemoNotice';
-import { ProductImage } from '../../components/product/ProductCard';
-import CanvasPreview, { defaultsFor, overlayFor } from '../../components/tryon/CanvasPreview';
+import { Badge, Button, Select, Tabs } from '../../components/common/UI';
+import CanvasPreview, { loadImage } from '../../components/tryon/CanvasPreview';
+import { defaultControls } from '../../components/tryon/faceGeometry';
+import { accessoryStyles, sunglassesAssetFor } from '../../data/faceAccessories';
+import { useTryOnCamera } from '../../hooks/useTryOnCamera';
+import { tryOnService } from '../../services/tryOnService';
+import { errorMessage } from '../../services/api';
+
+const blobFrom = (canvas) =>
+  new Promise((resolve, reject) =>
+    canvas.toBlob(
+      (blob) =>
+        blob ? resolve(blob) : reject(new Error('Could not create the snapshot. Please retry.')),
+      'image/png',
+    ),
+  );
+async function thumbnail(canvas) {
+  const small = document.createElement('canvas');
+  const ratio = Math.min(1, 480 / Math.max(canvas.width, canvas.height));
+  small.width = Math.round(canvas.width * ratio);
+  small.height = Math.round(canvas.height * ratio);
+  small.getContext('2d').drawImage(canvas, 0, 0, small.width, small.height);
+  return blobFrom(small);
+}
+const modeFor = (product) =>
+  product?.accessoryKind === 'sunglasses' || product?.tryOnType === 'SUNGLASSES'
+    ? 'sunglasses'
+    : product?.tryOnType === 'CLOTHING'
+      ? 'clothing'
+      : 'jewelry';
+const controlsFor = (mode) => ({ ...defaultControls(), auto: mode === 'sunglasses' });
 
 export default function TryOn() {
-  const { state, user, mutate, addToCart, registerMedia, toast } = useApp();
-  const [params] = useSearchParams();
-  const initial =
-    state.products.find((p) => String(p.id) === params.get('product')) ||
-    state.products[1] ||
-    state.products[0];
-  const [productId, setProductId] = useState(initial?.id);
-  const product = state.products.find((p) => String(p.id) === String(productId));
-  const [mode, setMode] = useState(initial?.tryOnType || 'SUNGLASSES');
-  const [photo, setPhoto] = useState('');
-  const [controls, setControls] = useState(defaultsFor(initial?.tryOnType || 'SUNGLASSES'));
+  const { state, user, addToCart, localUpdate, registerMedia, toast } = useApp();
+  const [params, setParams] = useSearchParams();
+  const arDebug = params.get('arDebug') === '1';
+  const [adjustFit, setAdjustFit] = useState(false);
+  const products = state.products.filter((p) =>
+    ['FACE_AR', 'SUNGLASSES', 'CLOTHING', 'JEWELRY'].includes(p.tryOnType),
+  );
+  const requested = params.get('productId') || params.get('product');
+  const product =
+    products.find((p) => String(p.id) === requested) ||
+    products.find((p) => modeFor(p) === 'sunglasses') ||
+    products[0];
+  const mode = modeFor(product),
+    isAR = mode === 'sunglasses';
+  const [styleId, setStyleId] = useState(product?.accessoryStyle || 'aviator');
+  const style =
+    mode === 'clothing'
+      ? { id: 'clothing', kind: 'clothing', overlayAsset: '/assets/overlay-clothing.svg' }
+      : mode === 'jewelry' && !product?.accessoryKind
+        ? { id: 'necklace', kind: 'necklace', overlayAsset: '/assets/overlay-necklace.svg' }
+        : accessoryStyles.find((s) => s.id === styleId) || accessoryStyles[0];
+  const glassesAsset = isAR ? sunglassesAssetFor(product, style) : null;
+  const overlay = isAR
+    ? glassesAsset.src
+    : style.id === product?.accessoryStyle
+      ? product.tryOnImageUrl || style.overlayAsset
+      : style.overlayAsset;
+  const [source, setSource] = useState(null);
+  const [inputMode, setInputMode] = useState('camera');
+  const [controls, setControls] = useState(() => controlsFor(mode));
   const [view, setView] = useState('after');
   const [compare, setCompare] = useState(50);
-  const [cameraActive, setCameraActive] = useState(false);
-  const [cameraBusy, setCameraBusy] = useState(false);
-  const [cameraError, setCameraError] = useState('');
-  const [imageError, setImageError] = useState('');
-  const [stage, setStage] = useState(0);
-  const [processed, setProcessed] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const { busy, error, run, setError } = useAsync();
-  const canvas = useRef(null);
-  const video = useRef(null);
-  const stream = useRef(null);
-  const timer = useRef(null);
-  const mounted = useRef(true);
-  const cameraAttempt = useRef(0);
-  const imageFailure = useCallback((message) => setImageError(message), []);
-  const stopCamera = useCallback(() => {
-    cameraAttempt.current += 1;
-    stream.current?.getTracks().forEach((track) => track.stop());
-    stream.current = null;
-    setCameraActive(false);
-    setCameraBusy(false);
+  const [retry, setRetry] = useState(0);
+  const [status, setStatus] = useState({
+    ready: false,
+    tracking: 'Waiting for input',
+    assetReady: false,
+  });
+  const [inputError, setInputError] = useState('');
+  const [loadingPhoto, setLoadingPhoto] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [saved, setSaved] = useState('');
+  const [pendingLocal, setPendingLocal] = useState(null);
+  const preview = useRef(null),
+    video = useRef(null),
+    uploadAttempt = useRef(0),
+    mounted = useRef(true);
+  const onStatus = useCallback(
+    (patch) =>
+      setStatus((old) => {
+        if (Object.keys(patch).every((key) => old[key] === patch[key])) return old;
+        return { ...old, ...patch };
+      }),
+    [],
+  );
+  const changeSource = useCallback((next) => {
+    setSource(next);
+    setSaved('');
+    setPendingLocal(null);
+    setSaveError('');
+    setStatus((old) => ({
+      ...old,
+      ready: false,
+      tracking: 'Waiting for input',
+      detectorError: '',
+    }));
   }, []);
+  const camera = useTryOnCamera(video, changeSource);
+  useEffect(() => {
+    if (isAR && !arDebug) {
+      setControls((old) => ({ ...old, auto: true }));
+      setView('after');
+    }
+  }, [isAR, arDebug]);
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      stream.current?.getTracks().forEach((track) => track.stop());
-      clearInterval(timer.current);
+      uploadAttempt.current += 1;
     };
   }, []);
+  useEffect(
+    () => () => {
+      if (source?.mediaUrl) URL.revokeObjectURL(source.mediaUrl);
+    },
+    [source],
+  );
   useEffect(() => {
-    if (cameraActive && video.current) {
-      video.current.srcObject = stream.current;
-      video.current
-        .play()
-        .catch(() => setCameraError('Camera preview could not start. Try an image upload.'));
-    }
-  }, [cameraActive]);
+    setStyleId(product?.accessoryStyle || 'aviator');
+    setControls(controlsFor(mode));
+  }, [product?.id, product?.accessoryStyle, mode]);
   useEffect(() => {
-    setSaved(false);
-    setProcessed(false);
-    setStage(0);
-    clearInterval(timer.current);
-  }, [photo, productId, mode]);
-  async function startCamera() {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraError('Camera is unavailable. Use localhost or HTTPS, or upload a photo.');
-      return;
-    }
-    stopCamera();
-    setCameraBusy(true);
-    setCameraError('');
-    const attempt = cameraAttempt.current;
-    try {
-      const next = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 1280 } },
-        audio: false,
-      });
-      if (!mounted.current || attempt !== cameraAttempt.current) {
-        next.getTracks().forEach((track) => track.stop());
-        return;
-      }
-      stream.current = next;
-      setCameraActive(true);
-    } catch (e) {
-      setCameraError(
-        e.name === 'NotAllowedError'
-          ? 'Camera permission denied. Allow access in your browser or upload a photo.'
-          : e.name === 'NotFoundError'
-            ? 'No camera found. Upload a photo to continue.'
-            : 'Could not open the camera. It may be in use by another application.',
-      );
-    } finally {
-      if (mounted.current) setCameraBusy(false);
-    }
+    uploadAttempt.current += 1;
+    setLoadingPhoto(false);
+    camera.stop();
+    camera.clearError();
+    changeSource(null);
+    setInputError('');
+    setView('after');
+  }, [mode, camera.stop, changeSource]);
+  useEffect(() => {
+    // A captured result belongs to the product/style captured, never relabel it.
+    setSource((old) => (old?.composite ? null : old));
+  }, [product?.id, styleId]);
+  useEffect(() => {
+    setSaved('');
+    setPendingLocal(null);
+    setSaveError('');
+  }, [controls, styleId, product?.id]);
+
+  function chooseProduct(id) {
+    setParams({ productId: String(id), ...(arDebug ? { arDebug: '1' } : {}) }, { replace: true });
   }
-  function capture() {
-    const source = video.current;
-    if (!source?.videoWidth) {
-      setCameraError('Wait for the camera preview before capturing.');
-      return;
-    }
-    const buffer = document.createElement('canvas');
-    buffer.width = source.videoWidth;
-    buffer.height = source.videoHeight;
-    buffer.getContext('2d').drawImage(source, 0, 0);
-    buffer.toBlob(
-      (blob) => {
-        if (blob && mounted.current) {
-          setPhoto(registerMedia(blob));
-          setImageError('');
-          setCameraError('');
-          stopCamera();
-        }
-      },
-      'image/jpeg',
-      0.9,
-    );
+  function chooseMode(mode) {
+    if (busy) return;
+    const next = products.find((p) => modeFor(p) === mode);
+    if (next) chooseProduct(next.id);
   }
-  function upload(e) {
-    const file = e.target.files?.[0];
-    e.target.value = '';
+  function switchInput(mode) {
+    uploadAttempt.current += 1;
+    setLoadingPhoto(false);
+    camera.stop();
+    camera.clearError();
+    changeSource(null);
+    setInputError('');
+    setInputMode(mode);
+    setView('after');
+  }
+  async function upload(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) return;
     if (
       !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) ||
       file.size > 12 * 1024 * 1024
     ) {
-      setImageError('Choose a JPEG, PNG, or WebP photo smaller than 12 MB.');
+      setInputError('Choose a PNG, JPG, JPEG, or WebP photo smaller than 12 MB.');
       return;
     }
-    stopCamera();
-    setImageError('');
-    setCameraError('');
-    setPhoto(registerMedia(file));
+    const token = ++uploadAttempt.current;
+    camera.stop();
+    camera.clearError();
+    changeSource(null);
+    setInputError('');
+    setLoadingPhoto(true);
+    const url = URL.createObjectURL(file);
+    try {
+      const element = await loadImage(url);
+      if (!mounted.current || token !== uploadAttempt.current) return;
+      changeSource({ element, live: false, mirrored: false, kind: 'upload' });
+      setView('after');
+      setRetry(0);
+    } catch (e) {
+      if (mounted.current && token === uploadAttempt.current) setInputError(e.message);
+    } finally {
+      URL.revokeObjectURL(url);
+      if (mounted.current && token === uploadAttempt.current) setLoadingPhoto(false);
+    }
   }
-  function process() {
-    setProcessed(false);
-    setStage(1);
-    clearInterval(timer.current);
-    let current = 1;
-    timer.current = setInterval(() => {
-      current += 1;
-      if (current > 3) {
-        clearInterval(timer.current);
-        setStage(0);
-        setProcessed(true);
-        setView('after');
-      } else setStage(current);
-    }, 650);
+  async function capture() {
+    const snapshot = preview.current?.snapshot(true);
+    if (!snapshot) return;
+    const token = ++uploadAttempt.current;
+    setBusy(true);
+    try {
+      const blob = await blobFrom(snapshot.result);
+      if (!mounted.current || token !== uploadAttempt.current) return;
+      camera.stop();
+      changeSource({
+        element: snapshot.original,
+        ...(isAR ? { composite: snapshot.result } : {}),
+        mediaUrl: registerMedia(blob),
+        live: false,
+        mirrored: false,
+        kind: 'snapshot',
+      });
+      setRetry(0);
+      setView('after');
+    } catch (e) {
+      if (mounted.current) toast(e.message, 'error');
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  }
+  async function download() {
+    try {
+      const snapshot = preview.current?.snapshot();
+      if (!snapshot) throw new Error('Add a photo or start the camera first.');
+      const blob = await blobFrom(snapshot.result),
+        url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `tryonbd-${style.kind === 'forehead' ? 'head-jewelry' : style.kind}-result.png`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+  function storeSession(prepared, validated) {
+    const record = {
+      ...prepared.metadata,
+      inputImageUrl: registerMedia(prepared.original),
+      resultImageUrl: registerMedia(prepared.result),
+      sync: validated ? 'Controller validated' : 'Local / Unsynced',
+      persistence: 'Demo / Local',
+      requestValidated: validated,
+    };
+    localUpdate('sessions', record, 'create');
+    const message =
+      isAR && !arDebug
+        ? validated
+          ? 'Try-on saved'
+          : 'Saved on this device'
+        : validated
+          ? 'Spring Boot request validated'
+          : 'Saved as Local Demo / Unsynced';
+    setSaved(message);
+    setPendingLocal(null);
+    setSaveError('');
+    toast(message, validated ? 'success' : 'info');
   }
   async function save() {
-    run(async () => {
-      if (!canvas.current) return;
-      const blob = await new Promise((resolve) => canvas.current.toBlob(resolve, 'image/png'));
-      if (!blob) {
-        setError('Unable to create a snapshot. Please try a different photo.');
-        return;
-      }
-      const result = await mutate(
-        'sessions',
-        'create',
-        {
-          userId: user.testId || 1,
-          productId: product.testId || 1,
-          inputImageUrl: photo.startsWith('blob:')
-            ? `https://example.com/demo-input-${Date.now()}.jpg`
-            : `${window.location.origin}${photo}`,
-          tryOnType: mode,
-        },
-        null,
-        {
+    if (!product || !canExport || busy) return;
+    const snapshot = preview.current?.snapshot();
+    if (!snapshot) return;
+    setBusy(true);
+    setSaveError('');
+    setPendingLocal(null);
+    try {
+      const prepared = {
+        original: await thumbnail(snapshot.original),
+        result: await thumbnail(snapshot.result),
+        metadata: {
+          id: `DEMO-LOCAL-${crypto.randomUUID()}`,
+          date: new Date().toISOString(),
           userId: user.id,
           productId: product.id,
-          inputImageUrl: photo,
-          resultImageUrl: registerMedia(blob),
-          controls,
-          prototype: true,
+          tryOnType: isAR ? 'FACE_AR' : mode.toUpperCase(),
+          accessoryStyle: style.id,
+          controls: { ...controls },
+          sourceKind: source.kind,
+          testId: 1,
         },
-      );
-      if (result.ok) setSaved(true);
-      else setError(result.error);
-    });
-  }
-  function download() {
-    canvas.current?.toBlob((blob) => {
-      if (!blob) {
-        toast('Snapshot could not be created.', 'error');
-        return;
+      };
+      try {
+        // An honest local reference: this API validates text; it does not upload or host photos.
+        await tryOnService.create({
+          userId: Number(user.testId) || 1,
+          productId: Number(product.testId) || 1,
+          inputImageUrl: `urn:tryonbd:local-input:${crypto.randomUUID()}`,
+          tryOnType: isAR ? 'FACE_AR' : mode.toUpperCase(),
+        });
+        if (mounted.current) storeSession(prepared, true);
+      } catch (e) {
+        if (!mounted.current) return;
+        if (e.backendOffline) {
+          setSaveError(
+            isAR && !arDebug
+              ? 'Saving is unavailable right now. You can keep this try-on on this device.'
+              : 'Backend offline. You can retry or explicitly save this snapshot as a Local Demo.',
+          );
+          setPendingLocal(prepared);
+        } else setSaveError(errorMessage(e));
       }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'TryOnBD-demo-preview.png';
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }, 'image/png');
+    } catch (e) {
+      if (mounted.current) setSaveError(e.message);
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
   }
-  function chooseProduct(id) {
-    const next = state.products.find((p) => String(p.id) === String(id));
-    setProductId(next.id);
-    setMode(next.tryOnType || 'CLOTHING');
-    setControls(defaultsFor(next.tryOnType || 'CLOTHING'));
+  const canExport = Boolean(
+    source &&
+    status.ready &&
+    status.assetReady &&
+    (source.composite || !controls.auto || status.tracking === 'Active'),
+  );
+  const cameraBusy = camera.status === 'Requesting Permission';
+  const notice = inputError || camera.error || status.assetError || status.detectorError;
+  const canvasStage = (
+    <div className="canvas-stage">
+      <video
+        ref={video}
+        muted
+        playsInline
+        autoPlay
+        className="face-video-source"
+        aria-hidden="true"
+      />
+      <div
+        className={source ? 'face-canvas-wrap' : 'face-canvas-hidden'}
+        style={arDebug ? { position: 'relative' } : undefined}
+      >
+        <CanvasPreview
+          ref={preview}
+          source={source}
+          overlay={overlay}
+          leftTempleSrc={glassesAsset?.leftTempleSrc}
+          rightTempleSrc={glassesAsset?.rightTempleSrc}
+          fit={glassesAsset?.fit}
+          kind={style.kind}
+          controls={isAR && !arDebug ? { ...controls, auto: true } : controls}
+          arDebug={arDebug}
+          view={view}
+          compare={compare}
+          trackingEnabled={isAR}
+          retry={retry}
+          onStatus={onStatus}
+        />
+      </div>
+      {!source && (
+        <div className="canvas-empty">
+          <ScanLine size={64} strokeWidth={0.8} />
+          <h3>Your next look starts with you.</h3>
+          <p>Start your camera or upload a clear, front-facing photo.</p>
+        </div>
+      )}
+    </div>
+  );
+  if (isAR && !arDebug) {
+    const frames = accessoryStyles.filter((s) => s.kind === 'sunglasses' && s.src);
+    const trackingLabel = source?.composite
+      ? 'Captured'
+      : loadingPhoto
+        ? 'Opening photo…'
+        : status.tracking === 'Active'
+          ? 'Frame fitted'
+          : status.tracking === 'Lost'
+            ? 'Face forward in good light'
+            : source
+              ? 'Finding your face…'
+              : 'Ready when you are';
+    return (
+      <div className="studio-page face-studio simple-eyewear">
+        <div className="container">
+          <header className="eyewear-heading">
+            <Link to={`/products/${product.id}`}>← Back to product</Link>
+            <h1>Find your frame.</h1>
+            <p>{product.name}</p>
+          </header>
+          <fieldset disabled={busy} className="face-fieldset eyewear-studio">
+            <section className="studio-preview" aria-label="Try-on preview">
+              <div className="preview-toolbar">
+                <span role="status">{trackingLabel}</span>
+              </div>
+              {canvasStage}
+            </section>
+            <div className="eyewear-input" role="group" aria-label="Input source">
+              <Button
+                variant="studio"
+                busy={cameraBusy}
+                disabled={camera.status === 'Camera Active'}
+                onClick={() => {
+                  setInputMode('camera');
+                  setInputError('');
+                  setView('after');
+                  camera.start();
+                }}
+              >
+                <Camera size={18} />
+                {source?.kind === 'snapshot' ? 'Retake' : 'Camera'}
+              </Button>
+              <label className="btn btn-studio eyewear-upload">
+                <Upload size={18} /> Upload Photo
+                <input
+                  aria-label="Upload photo"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(event) => {
+                    setInputMode('upload');
+                    upload(event);
+                  }}
+                />
+              </label>
+              {(source?.live || cameraBusy) && (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    camera.stop();
+                    changeSource(null);
+                  }}
+                >
+                  Stop camera
+                </Button>
+              )}
+              {camera.devices.length > 1 && source?.live && (
+                <Button variant="ghost" onClick={camera.switchCamera}>
+                  Switch camera
+                </Button>
+              )}
+            </div>
+            {notice && (
+              <p className="face-feedback face-error" role="alert">
+                {status.assetError ||
+                  (status.detectorError
+                    ? 'We could not fit your frame. Try again or upload a clear front-facing photo.'
+                    : notice)}
+              </p>
+            )}
+            {source && !source.composite && ['Unavailable', 'Lost'].includes(status.tracking) && (
+              <Button variant="ghost" onClick={() => setRetry((n) => n + 1)}>
+                Try fitting again
+              </Button>
+            )}
+            {status.assetError && (
+              <Button variant="ghost" onClick={() => setRetry((n) => n + 1)}>
+                Retry image
+              </Button>
+            )}
+            <section className="eyewear-frames" aria-label="Frames">
+              <h2>Try another frame</h2>
+              <div className="face-style-grid" aria-label="Accessory styles">
+                {frames.map((s) => (
+                  <button
+                    key={s.id}
+                    aria-pressed={style.id === s.id}
+                    onClick={() => {
+                      const nextProduct = products.find((p) => p.accessoryStyle === s.id);
+                      if (nextProduct && nextProduct.id !== product.id)
+                        chooseProduct(nextProduct.id);
+                      setStyleId(s.id);
+                    }}
+                  >
+                    <img
+                      src={s.src}
+                      alt=""
+                      onError={(event) => {
+                        event.currentTarget.hidden = true;
+                      }}
+                    />
+                    <span>{s.name}</span>
+                  </button>
+                ))}
+              </div>
+              {frames.length === 1 && (
+                <p className="text-sm">Classic Aviator is currently the only available frame.</p>
+              )}
+            </section>
+            <div className="eyewear-primary-actions">
+              <Button disabled={!source?.live || !canExport} onClick={capture}>
+                <Camera size={18} />
+                Capture
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={!product?.stockQuantity}
+                onClick={() => addToCart(product)}
+              >
+                <ShoppingBag size={18} />
+                Add to Cart
+              </Button>
+            </div>
+            {canExport && (
+              <div className="eyewear-secondary-actions">
+                <Button variant="ghost" onClick={download}>
+                  <Download size={16} />
+                  Download PNG
+                </Button>
+                <Button variant="ghost" disabled={Boolean(saved)} onClick={save}>
+                  <Save size={16} />
+                  {saved ? 'Try-On saved' : 'Save Try-On'}
+                </Button>
+              </div>
+            )}
+            {saveError && (
+              <p className="face-feedback face-error" role="alert">
+                {saveError}
+              </p>
+            )}
+            {pendingLocal && (
+              <Button variant="ghost" onClick={() => storeSession(pendingLocal, false)}>
+                Save on this device
+              </Button>
+            )}
+            {saved && (
+              <p role="status">
+                Try-on saved.{' '}
+                <Link to="/dashboard/customer/try-on-history">View saved try-ons</Link>
+              </p>
+            )}
+            <button
+              className="eyewear-adjust"
+              aria-expanded={adjustFit}
+              onClick={() => setAdjustFit((open) => !open)}
+            >
+              Adjust fit
+            </button>
+            {adjustFit && (
+              <fieldset className="face-fieldset eyewear-fit" disabled={Boolean(source?.composite)}>
+                <p>Your frame fits automatically. Make a small adjustment if needed.</p>
+                {[
+                  { key: 'scale', label: 'Size', min: 0.7, max: 1.3, step: 0.01 },
+                  { key: 'y', label: 'Height', min: -10, max: 10, step: 0.5 },
+                ].map((c) => (
+                  <label className="range-control" key={c.key}>
+                    <span>{c.label}</span>
+                    <input
+                      aria-label={c.label}
+                      type="range"
+                      min={c.min}
+                      max={c.max}
+                      step={c.step}
+                      value={controls[c.key]}
+                      onChange={(e) =>
+                        setControls((old) => ({
+                          ...old,
+                          [c.key]: Number(e.target.value),
+                          auto: true,
+                        }))
+                      }
+                    />
+                  </label>
+                ))}
+                <Button variant="ghost" onClick={() => setControls(controlsFor(mode))}>
+                  Reset fit
+                </Button>
+              </fieldset>
+            )}
+            <p className="eyewear-privacy">Your camera and photos stay in your browser.</p>
+          </fieldset>
+        </div>
+      </div>
+    );
   }
   return (
-    <div className="studio-page">
+    <div className="studio-page face-studio">
       <div className="container">
         <header className="studio-heading">
           <div>
             <span className="eyebrow">
               <span className="live-dot" />
-              YOUR PERSONAL STYLE LAB
+              YOUR PERSONAL STYLE STUDIO
             </span>
             <h1>
               A new look. <em>All you.</em>
             </h1>
-            <p>A little experimentation looks good on you.</p>
+            <p>
+              {isAR
+                ? 'Sunglasses that follow your face in real time.'
+                : 'Adjust a manual overlay on your camera or photo.'}
+            </p>
           </div>
-          <Badge tone="dark">
-            <Sparkles size={13} />
-            Prototype / Demo Processing
-          </Badge>
+          <Badge tone="dark">{isAR ? 'LIVE AR TRY-ON' : 'MANUAL DEMO OVERLAY'}</Badge>
         </header>
-        <div className="studio-steps">
-          {['Choose your piece', 'Bring your photo', 'Make it yours'].map((x, i) => (
-            <span key={x}>
-              <b>{i + 1}</b>
-              {x}
-              <Check
-                size={13}
-                className={
-                  (i === 0 && product) || (i === 1 && photo) || (i === 2 && processed)
-                    ? ''
-                    : 'invisible'
-                }
-              />
-            </span>
-          ))}
+        <div className="face-mode-bar">
+          <Tabs
+            label="Try-on mode"
+            tabs={[
+              { value: 'sunglasses', label: 'Sunglasses' },
+              { value: 'clothing', label: 'Clothing' },
+              { value: 'jewelry', label: 'Jewelry' },
+            ]}
+            value={mode}
+            onChange={chooseMode}
+          />
+          <span className="text-sm">
+            {isAR
+              ? 'Powered by real-time face landmarks'
+              : 'Prototype / Demo Processing · No AI model'}
+          </span>
         </div>
-        <div className="studio-grid">
+        <fieldset disabled={busy} className="studio-grid face-fieldset">
           <aside className="studio-panel">
             <h2>
               01 <span>The piece</span>
             </h2>
             <Select
               label="Selected product"
-              value={productId || ''}
+              value={product?.id || ''}
               onChange={(e) => chooseProduct(e.target.value)}
             >
-              {state.products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
+              {products
+                .filter((p) => modeFor(p) === mode)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
             </Select>
-            {product && (
-              <div className="studio-product">
-                <ProductImage product={product} />
-                <div>
-                  <strong>{product.name}</strong>
-                  <p>Manual overlay preview</p>
-                </div>
-              </div>
+            {requested && !products.some((p) => String(p.id) === requested) && (
+              <p className="text-sm mt-3">
+                That product is unavailable. Choose another product to preview.
+              </p>
             )}
-            <div className="studio-mode">
-              {[
-                { id: 'CLOTHING', label: 'Clothing', icon: Shirt },
-                { id: 'SUNGLASSES', label: 'Glasses', icon: Glasses },
-                { id: 'JEWELRY', label: 'Jewelry', icon: Gem },
-              ].map((m) => (
-                <button
-                  key={m.id}
-                  aria-pressed={mode === m.id}
-                  onClick={() => {
-                    setMode(m.id);
-                    setControls(defaultsFor(m.id));
-                  }}
-                >
-                  <m.icon size={20} />
-                  {m.label}
-                </button>
-              ))}
+            <div className="face-style-grid" aria-label="Accessory styles">
+              {accessoryStyles
+                .filter((s) => s.kind === product?.accessoryKind)
+                .map((s) => (
+                  <button
+                    key={s.id}
+                    aria-pressed={style.id === s.id}
+                    disabled={s.kind === 'sunglasses' && !s.src}
+                    onClick={() => setStyleId(s.id)}
+                  >
+                    {(s.kind !== 'sunglasses' || s.src) && (
+                      <img
+                        src={s.overlayAsset}
+                        alt=""
+                        onError={(event) => {
+                          if (s.kind === 'sunglasses') {
+                            event.currentTarget.hidden = true;
+                            return;
+                          }
+                          if (
+                            s.fallbackSrc &&
+                            event.currentTarget.getAttribute('src') !== s.fallbackSrc
+                          )
+                            event.currentTarget.src = s.fallbackSrc;
+                        }}
+                      />
+                    )}
+                    <span>{s.name}</span>
+                    {s.kind === 'sunglasses' && !s.src && (
+                      <small>Real product photo required</small>
+                    )}
+                  </button>
+                ))}
             </div>
             <h2 className="mt-7">
-              02 <span>Your photo</span>
+              02 <span>Your input</span>
             </h2>
-            <label className="upload-zone">
-              <Upload size={24} />
-              <strong>Drop into a new look</strong>
-              <span>Choose a photo to upload</span>
-              <small>JPG, PNG, WebP · up to 12 MB</small>
-              <input
-                aria-label="Upload photo"
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                onChange={upload}
-              />
-            </label>
-            <Button
-              variant="studio"
-              className="w-full mt-3"
-              busy={cameraBusy}
-              onClick={startCamera}
-            >
-              <Camera size={17} />
-              {photo ? 'Retake with camera' : 'Start camera'}
-            </Button>
-            <button
-              className="demo-photo-link"
-              onClick={() => {
-                stopCamera();
-                setPhoto('/assets/person.svg');
-                setImageError('');
-              }}
-            >
-              Or use the illustrated demo portrait <Arrow />
-            </button>
-            {photo && (
-              <button
-                className="text-sm muted mt-3 flex gap-2 items-center"
-                onClick={() => {
-                  setPhoto('');
-                  stopCamera();
-                }}
-              >
-                <X size={14} />
-                Remove photo
-              </button>
+            <Tabs
+              label="Input source"
+              tabs={[
+                { value: 'camera', label: 'Live Camera' },
+                { value: 'upload', label: 'Upload Photo' },
+              ]}
+              value={inputMode}
+              onChange={switchInput}
+            />
+            {inputMode === 'upload' ? (
+              <label className="upload-zone mt-4">
+                <Upload size={24} />
+                <strong>Choose your photo</strong>
+                <small>PNG, JPG, JPEG, WebP · up to 12 MB</small>
+                <input
+                  aria-label="Upload photo"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={upload}
+                />
+              </label>
+            ) : (
+              <div className="face-camera-actions">
+                <p role="status">{camera.status}</p>
+                <Button
+                  variant="studio"
+                  busy={cameraBusy}
+                  onClick={() => {
+                    setInputError('');
+                    camera.start();
+                  }}
+                  disabled={camera.status === 'Camera Active'}
+                >
+                  <Camera size={16} />
+                  {source?.kind === 'snapshot'
+                    ? 'Retake with camera'
+                    : isAR
+                      ? 'Start AR Camera'
+                      : 'Start camera'}
+                </Button>
+                {(camera.status === 'Camera Active' || cameraBusy) && (
+                  <Button
+                    variant="studio"
+                    onClick={() => {
+                      camera.stop();
+                      changeSource(null);
+                    }}
+                  >
+                    Stop camera
+                  </Button>
+                )}
+                {camera.devices.length > 1 && camera.status === 'Camera Active' && (
+                  <Button variant="studio" onClick={camera.switchCamera}>
+                    Switch camera
+                  </Button>
+                )}
+                {camera.error && (
+                  <Button variant="studio" onClick={() => camera.start()}>
+                    Retry camera
+                  </Button>
+                )}
+              </div>
             )}
             <p className="studio-privacy">
-              Your photos stay in browser memory. Uploaded images are not hosted or saved to
-              localStorage.
+              Photos are processed in your browser. No face images are uploaded. Saved previews last
+              for this visit; only session metadata stays in local storage.
             </p>
           </aside>
-          <section className="studio-preview" aria-label="Canvas preview">
+          <section className="studio-preview" aria-label="Try-on preview">
             <div className="preview-toolbar">
-              <span>
-                <span className="live-dot" />
-                LIVE CANVAS
+              <span role="status">
+                {isAR ? `Face Tracking: ${status.tracking}` : 'Manual overlay preview'}
               </span>
-              <IconButton
-                label="Reset canvas controls"
-                onClick={() => setControls(defaultsFor(mode))}
-              >
-                <RotateCcw size={16} />
-              </IconButton>
+              <span>
+                {source?.kind === 'snapshot' ? 'SNAPSHOT' : source?.live ? 'LIVE' : 'PHOTO'}
+              </span>
             </div>
-            <div className="canvas-stage">
-              {cameraActive ? (
-                <div className="camera-preview">
-                  <video ref={video} muted playsInline autoPlay aria-label="Live camera preview" />
-                  <div className="camera-actions">
-                    <Button onClick={capture}>
-                      <Camera size={16} />
-                      Capture photo
-                    </Button>
-                    <Button variant="secondary" onClick={stopCamera}>
-                      Stop camera
-                    </Button>
-                  </div>
-                </div>
-              ) : photo ? (
-                <>
-                  <CanvasPreview
-                    ref={canvas}
-                    photo={photo}
-                    overlay={overlayFor(mode, product?.categoryId)}
-                    controls={controls}
-                    view={view}
-                    compare={compare}
-                    onError={imageFailure}
-                  />
-                  <span className="canvas-label">
-                    {view === 'before' ? 'ORIGINAL PHOTO' : 'MANUAL DEMO OVERLAY'}
-                  </span>
-                </>
-              ) : (
-                <div className="canvas-empty">
-                  <div className="viewfinder">
-                    <ScanLine size={70} strokeWidth={0.7} />
-                  </div>
-                  <h3>Your next look starts with you.</h3>
-                  <p>
-                    Upload a photo, open your camera,
-                    <br />
-                    or explore with our demo portrait.
-                  </p>
-                  <span>PRIVATE BY DESIGN · PHOTOS STAY IN YOUR BROWSER</span>
-                </div>
-              )}
-              {stage > 0 && (
-                <div className="processing-overlay">
-                  <ScanLine className="animate-pulse" size={45} />
-                  <h3>
-                    {
-                      [
-                        '',
-                        'Preparing your local preview…',
-                        'Composing the demo overlay…',
-                        'Finishing your style preview…',
-                      ][stage]
-                    }
-                  </h3>
-                  <p>Prototype / Demo Processing · No AI model</p>
-                  <div className="progress-track">
-                    <span style={{ width: `${(stage / 3) * 100}%` }} />
-                  </div>
-                </div>
-              )}
-            </div>
+            {canvasStage}
             <div className="preview-bottom">
               <Tabs
+                label="Before and after"
                 tabs={[
                   { value: 'before', label: 'Before' },
                   { value: 'after', label: 'After' },
@@ -435,20 +755,20 @@ export default function TryOn() {
                 ]}
                 value={view}
                 onChange={setView}
-                label="Preview comparison"
               />
-              <button
-                disabled={!photo || !!imageError || cameraActive}
-                onClick={download}
-                aria-label="Download snapshot"
-              >
-                <Download size={18} />
-              </button>
+              <span className="text-xs">
+                {source?.composite
+                  ? 'Captured result'
+                  : controls.auto
+                    ? 'Automatic alignment'
+                    : 'Manual placement'}
+              </span>
             </div>
             {view === 'compare' && (
-              <label className="comparison-slider">
-                Before / after split
+              <label className="range-control m-3">
+                <span>Comparison split</span>
                 <input
+                  aria-label="Comparison split"
                   type="range"
                   min="0"
                   max="100"
@@ -457,116 +777,175 @@ export default function TryOn() {
                 />
               </label>
             )}
+            {(loadingPhoto || status.tracking === 'Loading face detector') && (
+              <p className="face-feedback" role="status">
+                {loadingPhoto ? 'Opening photo…' : 'Loading AR model…'}
+              </p>
+            )}
+            {isAR && status.assetNotice && (
+              <p className="face-feedback" role="status">
+                {status.assetNotice}
+              </p>
+            )}
+            {notice && (
+              <p className="face-feedback face-error" role="alert">
+                {notice}
+              </p>
+            )}
+            {isAR && source && status.tracking === 'Lost' && (
+              <p className="face-feedback" role="status">
+                No face detected. Please face the camera directly or upload another photo.
+              </p>
+            )}
+            {isAR &&
+              source &&
+              !source.composite &&
+              ['Unavailable', 'Lost'].includes(status.tracking) && (
+                <Button className="m-3" variant="studio" onClick={() => setRetry((n) => n + 1)}>
+                  Retry detection
+                </Button>
+              )}
+            <div className="face-actions">
+              <Button
+                variant="studio"
+                disabled={Boolean(source?.composite)}
+                onClick={() => {
+                  setControls(controlsFor(mode));
+                  setView('after');
+                }}
+              >
+                <RotateCcw size={16} />
+                Reset
+              </Button>
+              <Button
+                variant="studio"
+                disabled={!source?.live || !canExport || view !== 'after'}
+                onClick={capture}
+              >
+                <Camera size={16} />
+                {isAR ? 'Capture AR Result' : 'Capture snapshot'}
+              </Button>
+              <Button variant="studio" disabled={!canExport} onClick={download}>
+                <Download size={16} />
+                Download snapshot
+              </Button>
+            </div>
           </section>
           <aside className="studio-panel controls-panel">
             <h2>
-              03 <span>Make it yours</span>
+              03 <span>{isAR ? 'Fine tune' : 'Make it yours'}</span>
             </h2>
-            <p className="muted text-sm mb-6">Fine-tune your overlay. You’re in control.</p>
-            {[
-              { key: 'x', label: 'Horizontal position', min: 0, max: 100, step: 1, unit: '%' },
-              { key: 'y', label: 'Vertical position', min: 0, max: 100, step: 1, unit: '%' },
-              { key: 'scale', label: 'Scale', min: 0.2, max: 2.5, step: 0.05, unit: '×' },
-              { key: 'rotation', label: 'Rotation', min: -180, max: 180, step: 1, unit: '°' },
-              { key: 'opacity', label: 'Opacity', min: 0, max: 100, step: 1, unit: '%' },
-            ].map((control) => (
-              <label className="range-control" key={control.key}>
-                <span>
-                  {control.label}
-                  <b>
-                    {controls[control.key]}
-                    {control.unit}
-                  </b>
-                </span>
-                <input
-                  aria-label={control.label}
-                  type="range"
-                  min={control.min}
-                  max={control.max}
-                  step={control.step}
-                  value={controls[control.key]}
-                  onChange={(e) => {
-                    setSaved(false);
-                    setControls((old) => ({ ...old, [control.key]: Number(e.target.value) }));
-                  }}
-                />
-              </label>
-            ))}
-            <Button
-              variant="studio"
-              className="w-full"
-              onClick={() => setControls(defaultsFor(mode))}
-            >
-              <RotateCcw size={15} />
-              Reset adjustments
-            </Button>
-            <div className="future-note">
-              <Sparkles size={16} />
-              <div>
-                <strong>Made for a little imagination</strong>
-                <p>
-                  {mode === 'CLOTHING'
-                    ? 'Clothing uses an illustrated garment overlay. AI fitting and pose detection are future features.'
-                    : 'Place accessories manually. Automatic face landmarks are a future feature.'}
-                </p>
-              </div>
-            </div>
+            <fieldset disabled={Boolean(source?.composite)} className="face-fieldset">
+              {isAR && (
+                <label className="face-check">
+                  <input
+                    type="checkbox"
+                    checked={controls.auto}
+                    onChange={(e) => setControls((old) => ({ ...old, auto: e.target.checked }))}
+                  />
+                  Auto Align
+                </label>
+              )}
+              <p className="text-sm mb-5">
+                {source?.composite
+                  ? 'Result captured. Retake or upload a photo to adjust the fit.'
+                  : controls.auto
+                    ? 'Follows your face. Use offsets to fine-tune the fit.'
+                    : 'Manual placement. Position your accessory with the controls.'}
+              </p>
+              {style.kind === 'earrings' && (
+                <label className="face-check">
+                  <input
+                    type="checkbox"
+                    checked={controls.mirror}
+                    onChange={(e) => setControls((old) => ({ ...old, mirror: e.target.checked }))}
+                  />
+                  Mirror Adjustment
+                </label>
+              )}
+              {[
+                { key: 'x', label: 'X offset', min: -50, max: 50, step: 0.5, unit: '%' },
+                { key: 'y', label: 'Y offset', min: -50, max: 50, step: 0.5, unit: '%' },
+                { key: 'scale', label: 'Scale', min: 0.25, max: 2.5, step: 0.05, unit: '×' },
+                { key: 'rotation', label: 'Rotation', min: -180, max: 180, step: 1, unit: '°' },
+                { key: 'opacity', label: 'Opacity', min: 0, max: 100, step: 1, unit: '%' },
+              ].map((c) => (
+                <label className="range-control" key={c.key}>
+                  <span>
+                    {c.label}
+                    <b>
+                      {controls[c.key]}
+                      {c.unit}
+                    </b>
+                  </span>
+                  <input
+                    aria-label={c.label}
+                    type="range"
+                    min={c.min}
+                    max={c.max}
+                    step={c.step}
+                    value={controls[c.key]}
+                    onChange={(e) =>
+                      setControls((old) => ({ ...old, [c.key]: Number(e.target.value) }))
+                    }
+                  />
+                </label>
+              ))}
+            </fieldset>
             <Button
               className="studio-start w-full"
-              disabled={!photo || !!imageError || cameraActive || !product || stage > 0}
-              onClick={process}
+              busy={busy}
+              disabled={!canExport || Boolean(saved)}
+              onClick={save}
             >
-              <ScanLine size={17} />
-              {processed ? 'Try again' : 'Start demo try-on'}
+              <Save size={16} />
+              {saved ? 'Try-On saved' : 'Save Try-On'}
             </Button>
-            {processed && (
-              <div className="studio-results">
-                <span>
-                  <Check size={15} />
-                  Your prototype preview is ready
-                </span>
-                <Button
-                  variant="studio"
-                  className="w-full"
-                  busy={busy}
-                  disabled={saved || view !== 'after'}
-                  onClick={save}
-                >
-                  <Save size={16} />
-                  {saved ? 'Demo session saved' : 'Save demo session'}
-                </Button>
-                {view !== 'after' && <small>Select After to save the complete result.</small>}
-                <Button
-                  variant="studio"
-                  className="w-full"
-                  disabled={!product?.stockQuantity}
-                  onClick={() => addToCart(product)}
-                >
-                  <ShoppingBag size={16} />
-                  Add piece to bag
-                </Button>
-                <Link to="/dashboard/customer/try-on-history">View your demo history →</Link>
-              </div>
+            {saveError && (
+              <p className="face-feedback face-error" role="alert">
+                {saveError}
+              </p>
             )}
+            {pendingLocal && (
+              <Button
+                className="w-full mt-3"
+                variant="studio"
+                onClick={() => storeSession(pendingLocal, false)}
+              >
+                Save as Local Demo
+              </Button>
+            )}
+            {saved && (
+              <p className="face-feedback" role="status">
+                {saved}. Demo / Local session; no database persistence.
+              </p>
+            )}
+            <Button
+              className="w-full mt-3"
+              variant="studio"
+              disabled={!product?.stockQuantity}
+              onClick={() => addToCart(product)}
+            >
+              <ShoppingBag size={16} />
+              Add product to cart
+            </Button>
+            <Link className="demo-photo-link" to="/dashboard/customer/try-on-history">
+              View your demo history →
+            </Link>
+            <p className="studio-privacy">
+              {style.kind === 'earrings'
+                ? 'Place the earrings manually. Use Mirror Adjustment for symmetrical spacing.'
+                : 'A 2D style preview, not a measurement of physical fit.'}
+            </p>
           </aside>
-        </div>
-        {(cameraError || imageError || error) && (
-          <div className="mt-4">
-            <ErrorState message={cameraError || imageError || error} />
-          </div>
-        )}
-        <div className="studio-disclosure">
-          <DemoNotice compact />
-          <p>
-            Session creation tests the existing controller. Uploaded photos use a clearly
-            illustrative URL in the request; real image storage and persisted session IDs are future
-            work. Saved image previews are available only during this browser visit.
-          </p>
-        </div>
+        </fieldset>
+        <p className="face-footnote">
+          {isAR ? <Glasses size={16} /> : <Gem size={16} />}{' '}
+          {isAR
+            ? 'One face at a time · Face forward in good light · A visual preview, not a measurement of physical fit'
+            : 'Manual prototype · Automatic shirt and jewelry fitting are not implemented'}
+        </p>
       </div>
     </div>
   );
-}
-function Arrow() {
-  return <span aria-hidden="true">↗</span>;
 }

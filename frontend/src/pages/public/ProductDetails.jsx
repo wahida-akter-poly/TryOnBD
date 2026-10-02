@@ -16,6 +16,7 @@ import {
   Tabs,
 } from '../../components/common/UI';
 import { date } from '../../utils/format';
+import { supportsFaceAR } from '../../data/faceAccessories';
 
 export default function ProductDetails() {
   const { id } = useParams();
@@ -87,11 +88,11 @@ export default function ProductDetails() {
               ? `${product.stockQuantity} available in demo stock`
               : 'Currently out of stock'}
           </div>
-          <Link className="btn btn-primary w-full" to={`/try-on?product=${id}`}>
+          {supportsFaceAR(product) ? <Link className="btn btn-primary w-full" to={`/try-on?productId=${id}`}>
             <ScanLine size={18} />
             Try on virtually
             <ArrowUpRight size={17} />
-          </Link>
+          </Link> : <p className="muted text-sm">{product.tryOnType === 'CLOTHING' ? 'AI Clothing Try-On — Phase 2' : 'Necklace / body fitting is not available in Phase 1.'}</p>}
           <div className="flex gap-3 mt-3">
             <Button
               variant="secondary"
@@ -157,8 +158,8 @@ export default function ProductDetails() {
             <h3>A little more about this piece</h3>
             <p>{product.description || 'Part of our fictional Bangladeshi fashion collection.'}</p>
             <p>
-              Explore proportions and styling in the virtual studio. The canvas preview is a manual
-              prototype and does not estimate fit or size.
+              Sunglasses and head jewelry use browser face landmarks in the virtual studio.
+              The 2D preview does not measure physical fit or size.
             </p>
           </div>
         )}

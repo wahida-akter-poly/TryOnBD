@@ -1,3 +1,5 @@
+import { configureFaceProduct } from '../faceAccessories';
+
 export const images = {
   hero: '/assets/editorial.jpg',
   portrait: '/assets/portrait.jpg',
@@ -51,6 +53,7 @@ export const categories = [
     parentCategoryId: 6,
     description: 'Finish your look beautifully',
   },
+  { id: 9, categoryName: 'Head Jewelry', parentCategoryId: 6, description: 'Forehead and head accessories' },
 ].map((item) => ({ ...item, sync: 'Demo', testId: item.id }));
 export const users = [
   {
@@ -140,13 +143,15 @@ const productRows = [
   ['Noorani Pearl Earrings', 1490, 8, 3, 21, 4.9, 'earrings', 'JEWELRY', 'Handpicked', '#e9e5de'],
   ['Megh Cotton Shirt', 1390, 3, 1, 17, 4.3, 'shirt', 'CLOTHING', '', '#e5e8e2'],
   ['Zariya Everyday Pendant', 1890, 7, 3, 8, 4.8, 'necklace', 'JEWELRY', 'New arrival', '#ece6db'],
+  ['Noor Maang Tikka', 1690, 9, 3, 12, 4.8, 'earrings', 'FACE_AR', 'Head Jewelry', '#eee5dc'],
 ];
 export const products = productRows.map(
   (
     [name, price, categoryId, sellerId, stockQuantity, rating, asset, tryOnType, badge, color],
     index,
-  ) => ({
+  ) => configureFaceProduct({
     id: index + 1,
+    phaseOne: index >= 12,
     testId: index + 1,
     name,
     price,
@@ -154,7 +159,7 @@ export const products = productRows.map(
     sellerId,
     stockQuantity,
     rating,
-    imageUrl: images[asset],
+    imageUrl: index >= 12 ? '/assets/face-ar/tikka.png' : images[asset],
     asset,
     tryOnType,
     badge,

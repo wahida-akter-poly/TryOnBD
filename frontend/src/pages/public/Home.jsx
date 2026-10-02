@@ -240,15 +240,15 @@ export default function Home() {
             interactive try-on studio.
           </p>
           <div className="flex flex-wrap gap-2 my-6">
-            <Badge tone="dark">Clothing prototype</Badge>
-            <Badge tone="dark">Sunglasses overlays</Badge>
-            <Badge tone="dark">Jewelry overlays</Badge>
+            <Badge tone="dark">Clothing — Phase 2</Badge>
+            <Badge tone="dark">Sunglasses face tracking</Badge>
+            <Badge tone="dark">Head jewelry</Badge>
           </div>
           <Link to="/try-on" className="btn btn-light">
             Step inside the studio
             <ArrowUpRight size={18} />
           </Link>
-          <small>Canvas demo · Real AI fitting is a future feature</small>
+          <small>Browser face tracking · Camera or photo · Private by design</small>
         </div>
       </section>
       <section className="section container">

@@ -1,6 +1,6 @@
 # TryOnBD frontend
 
-A complete JavaScript React demonstration of a Bangladeshi fashion storefront, manual virtual try-on studio, four dashboard experiences, and the existing Spring Boot controller milestone.
+A JavaScript React demonstration of a Bangladeshi fashion storefront, browser face-tracked virtual try-on studio, four existing dashboard experiences, and the Spring Boot controller milestone.
 
 All project changes are confined to `frontend/`. The backend was inspected read-only to verify endpoint contracts. No backend code, Gradle configuration, tests, database configuration, ERD, or root files were changed.
 
@@ -9,6 +9,7 @@ All project changes are confined to `frontend/`. The backend was inspected read-
 ```powershell
 cd E:\AOOP\TryOnBD\frontend
 npm install
+npm run setup:vision
 npm run dev
 ```
 
@@ -65,7 +66,7 @@ frontend/
 | `/products`, `/search`                    | Search, hierarchy/subcategory filters, price/rating/try-on filters, sorting, pagination, mobile filter drawer                                      |
 | `/products/:id`                           | Image crop gallery, product/seller information, stock, local cart/wishlist, demo buy, reviews, related pieces                                      |
 | `/categories`                             | Expandable visual hierarchy and collection tiles                                                                                                   |
-| `/try-on`                                 | Dark camera/upload and manual canvas studio                                                                                                        |
+| `/try-on`                                 | Face-tracked sunglasses and head jewelry; camera/upload, adjustments, capture, download, local history                                             |
 | `/about`                                  | How it works and real/demo/future feature classification                                                                                           |
 | `/login`, `/register`, `/seller-register` | Mock role login and controller-backed user/seller request forms                                                                                    |
 | `/forgot-password`, `/reset-password`     | Explicitly labeled recovery previews; no emails or password changes                                                                                |
@@ -134,20 +135,53 @@ Storage uses a versioned `tryonbd:demo:v1` key and handles corrupt/unavailable s
 
 ## Virtual studio
 
-- Select clothing, sunglasses, or jewelry and choose a product.
-- Camera start/stop, permission/unavailable errors, capture, retake; upload PNG/JPEG/WebP up to 12 MB, remove, or use the bundled illustrated portrait.
-- Real 720×900 HTML canvas with X/Y position, scale, rotation, opacity, reset, before/after, comparison slider, and PNG download.
-- Locally drawn glasses, necklace, earrings, and garment overlays. These are illustrative assets, not exact product image segmentation.
-- Clothing uses staged **Prototype / Demo Processing**, not a machine-learning model. Face landmarks, pose estimation, auto alignment, and AI clothing generation remain future features.
-- Save session validates the supported DTO and stores local metadata and memory-only previews. An illustrative URL is sent for uploads because no image hosting endpoint exists. No photo bytes are uploaded to Spring Boot.
+Sunglasses use live MediaPipe face landmarks; clothing and jewelry retain manual overlay previews. Start AR Camera, allow access, and face the camera. Use After to capture the visible composite, Before to see the original, or Compare with the split slider. Fine tuning adjusts the automatic fit; disabling Auto Align explicitly switches sunglasses to manual placement.
+
+- `@mediapipe/tasks-vision` **0.10.32**, official float16 Face Landmarker **version 1**, one face, confidence thresholds 0.5. GPU initialization automatically retries on CPU. `npm run setup:vision` copies matching WASM and downloads the model to `public/mediapipe`; inference has no CDN or backend dependency. API choices were checked against the [official browser guide](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker/web_js) and the installed TypeScript declarations (`detectForVideo(video, timestampMs)`).
+- `CanvasPreview.jsx` owns the animation loop and composite rendering, `faceGeometry.js` owns fitting/smoothing, `useTryOnCamera.js` owns streams, and `faceLandmarker.js` owns the shared model. No detector is initialized during React rendering or on individual frames. Product/style changes reuse the current camera/model. Idle/manual/captured previews require no detector. Released models close after a one-second reuse window; late initialization and permission results are also cleaned up.
+- VIDEO detection processes new decoded frames only, at up to 30 Hz; display rendering follows requestAnimationFrame. Transform refs use an adaptive EMA for center/shortest-arc roll and a separate 40 ms size filter (about 95% convergence in 120 ms). Face loss retains the last fit for 150 ms, then fades it over 120 ms. Reacquisition after expiry starts at the newly detected face. UI state changes only on status transitions.
+- Eye corner pairs 33/133 and 362/263 are verified against MediaPipe's [official eye connections](https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/python/solutions/face_mesh_connections.py). Normalized coordinates convert to the same mirrored canvas space as the camera. Canvas backing resolution preserves source aspect ratio, with a maximum side of 1280 pixels; CSS contains the canvas without cropping.
+- Sunglasses width is recomputed from the face-side span (234–454) in canvas pixels. Final width = smoothed face span × product `widthMultiplier` × user Scale. Each style has independent fit/offset settings in `src/data/faceAccessories.js`. Put final transparent product PNG/WebP photographs in `public/assets/face-ar/sunglasses/` and configure `src`; see the [asset and distance-check guide](public/assets/face-ar/sunglasses/README.md). The loader crops alpha bounds once per asset, preserves aspect ratio, and uses high-quality smoothing at 100% default opacity. Existing illustrations are labeled fallbacks until real photographs are supplied. Frontend-only `tryOnAsset` and legacy `tryOnImageUrl` overrides remain outside backend DTOs.
+- Capture AR Result is enabled in After when a face is tracked (or explicit manual fallback is selected). It copies the visible canvas, exports PNG with `toBlob`, and registers the Blob in AppContext. The original and immutable composite remain separate: captured glasses are never drawn twice, and no second inference can shift them. Retake/upload to adjust a capture; changing product/style clears the old capture. Save/download always export the After result even when Before/Compare is selected.
+- Upload PNG/JPEG/WebP up to 12 MB. Sunglasses photos run IMAGE detection, with an explicit Auto Align/manual fallback if detection fails. Clothing/jewelry never load the model. Camera denial, absent/busy/disconnected devices, missing model/WASM, failed delegates and invalid images produce actionable inline feedback.
+- Save posts exactly `{ userId, productId, inputImageUrl, tryOnType }`; sunglasses retain `FACE_AR`, manual modes use `CLOTHING`/`JEWELRY`. The input is an honest `urn:tryonbd:local-input:...` reference because the current controller validates text and does not upload/host photos. HTTP 2xx means controller validation; HTTP 400 never saves; offline offers explicit Save as Local Demo. Thumbnails stay in AppContext memory, and only metadata persists in localStorage. Cart uses the existing AppContext operation.
+
+## Run and manually check sunglasses AR
+
+Optional backend, in one PowerShell terminal (Java 21):
+
+```powershell
+Set-Location E:\AOOP\TryOnBD\backend
+.\gradlew.bat bootRun
+```
+
+Frontend, in another terminal:
+
+```powershell
+Set-Location E:\AOOP\TryOnBD\frontend
+npm install
+npm run setup:vision
+npm run dev
+```
+
+1. Open `http://127.0.0.1:5173/products/2`, choose **Try on virtually**, then **Start AR Camera** and allow camera access. Wait for **Face Tracking: Active**.
+2. Face forward in good light. Check glasses sit across both eyes without touching any sliders. Move left/right and up/down; the mirrored image and glasses should move together. Move closer/farther to check size; tilt both ways to check roll.
+3. Hold still to check jitter, then move naturally to assess responsiveness. Leave the frame: glasses should disappear in about 270 ms after the last detection. Return to reacquire. Repeat in the actual room/lighting used for the presentation.
+4. Change the selected sunglasses/style while live. Tracking should continue without a new permission prompt. Skyline is out of stock in the seed catalog, so use Aero Aviator for the cart check.
+5. Optionally adjust X/Y offset, Scale, Rotation and Opacity. Reset restores automatic defaults. Try Before and Compare, then return to After.
+6. Select **Capture AR Result**. The camera indicator should switch off and the captured result should match the last visible composite. Download snapshot and open the PNG to confirm both face and glasses are present.
+7. **Save Try-On** validates with Spring Boot when available; otherwise select **Save as Local Demo** after the offline message. Open demo history to inspect the result. **Add product to cart** should add Aero Aviator to the existing cart.
+8. Retake, stop, restart, then switch to Clothing/Jewelry and navigate away. Check the browser camera indicator switches off each time. Both manual modes should still accept uploads and provide placement controls without face detection.
+9. Deny camera access and verify the upload fallback. For a model failure check, block `/mediapipe/face_landmarker.task` in browser developer tools and reload; start AR, verify the error/manual fallback, unblock it, and Retry detection.
+10. Repeat at a mobile viewport/device. Confirm the single preview fits without stretching or horizontal scrolling.
 
 ## Verification and limitations
 
-`npm test` checks all 35 routes, exact DTO boundaries, base-URL normalization, safe image/password serialization, and storage failures. Browser tests cover public/dashboard routes, desktop/mobile overflow, navigation, filtering/wishlist, checkout/invoices, HTTP 400 rejection, explicit offline fallback, profile/product payloads, canvas pixels/downloads/session saving, denied camera access, and Playground 200/400/offline feedback.
+Run `npm test`, `npm run build`, and `npm run test:browser` from `frontend`. Browser tests use installed Microsoft Edge. Tests cover real MediaPipe IMAGE inference and VIDEO inference on a transformed portrait streamed through canvas.captureStream, plus deterministic dependency mocks for GPU-to-CPU fallback, all-delegate failure, duplicate frames, lost/reacquired faces, captures, local history, cart, manual modes and cancellation while permission/model loading is pending. These are automated browser tests, not physical-webcam testing.
 
-Most successful/invalid API response scenarios use Playwright interception to isolate frontend behavior. A separate test checks the real configured proxy. Spring Boot was unavailable on port 8080 during implementation, so live successful controller validation was not claimed. Physical camera capture requires a camera and browser permission. Denial, upload, capture, and media-track cleanup are automated using a simulated browser media stream.
+The preview is 2D and intended for near-front-facing use: no occlusion, 3D perspective or physical fit measurement. Main-thread MediaPipe inference can reduce responsiveness on slow devices; hardware webcam/mobile smoothness must be checked interactively. Model/WASM assets add roughly 26 MB before compression. Saved image previews last only for the current app visit; backend controllers do not persist data. Clothing/jewelry remain manual prototypes.
 
-Future work: service/repository/database persistence; real backend authentication and authorization; persisted roles; real AI/AR; image hosting; payment and shipping; Order–Product item association; subscription billing; secure audit logs. All analytics/revenue/commission scenarios are explicitly simulated. Product photography is representative, not actual inventory photography.
+Next project task: **Real-time Shirt AR using MediaPipe Pose Landmarker**. After that: **Spring Data JPA + PostgreSQL entity/repository/service persistence** for the existing controllers.
 
 ## Image credits
 

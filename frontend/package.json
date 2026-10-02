@@ -7,11 +7,14 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test tests/contracts.test.js",
+    "test": "node --test tests/contracts.test.js tests/faceGeometry.test.js tests/earTracking.test.js",
+    "setup:vision": "node scripts/setup-vision.mjs",
+    "assets:face": "node scripts/create-face-assets.mjs",
     "test:browser": "playwright test",
     "format:check": "prettier --check src tests scripts *.js *.json *.md index.html"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "0.10.32",
     "axios": "^1.12.2",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",

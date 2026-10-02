@@ -49,7 +49,7 @@ export const contracts = {
       userId: 1,
       productId: 1,
       inputImageUrl: 'https://example.com/person.jpg',
-      tryOnType: 'CLOTHING',
+      tryOnType: 'FACE_AR',
     },
     update: ['resultImageUrl'],
     updateExample: { resultImageUrl: 'https://example.com/result.jpg' },
