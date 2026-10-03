@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   Camera,
@@ -39,19 +39,27 @@ async function thumbnail(canvas) {
 const modeFor = (product) =>
   product?.accessoryKind === 'sunglasses' || product?.tryOnType === 'SUNGLASSES'
     ? 'sunglasses'
-    : product?.tryOnType === 'CLOTHING'
+    : product?.arType === 'tshirt' || product?.tryOnType === 'CLOTHING'
       ? 'clothing'
       : 'jewelry';
-const controlsFor = (mode) => ({ ...defaultControls(), auto: mode === 'sunglasses' });
+const controlsFor = (mode, shirt = false) => ({
+  ...defaultControls(),
+  auto: mode === 'sunglasses' || shirt,
+});
 
 export default function TryOn() {
   const { state, user, addToCart, localUpdate, registerMedia, toast } = useApp();
   const [params, setParams] = useSearchParams();
   const arDebug = params.get('arDebug') === '1';
   const [adjustFit, setAdjustFit] = useState(false);
-  const products = state.products.filter((p) =>
-    ['FACE_AR', 'SUNGLASSES', 'CLOTHING', 'JEWELRY'].includes(p.tryOnType),
-  );
+  const products = [
+    ...state.products.filter(
+      (p) =>
+        p.arType === 'tshirt' ||
+        ['FACE_AR', 'SUNGLASSES', 'CLOTHING', 'JEWELRY'].includes(p.tryOnType),
+    ),
+    shirtPreviewProduct,
+  ];
   const requested = params.get('productId') || params.get('product');
   const product =
     products.find((p) => String(p.id) === requested) ||
@@ -59,9 +67,12 @@ export default function TryOn() {
     products[0];
   const mode = modeFor(product),
     isAR = mode === 'sunglasses';
+  const isShirt = product?.arType === 'tshirt';
+  const shirtFit = useMemo(() => (isShirt ? shirtCalibration(product) : null), [product, isShirt]);
   const [styleId, setStyleId] = useState(product?.accessoryStyle || 'aviator');
-  const style =
-    mode === 'clothing'
+  const style = isShirt
+    ? { id: 'tshirt', kind: 'tshirt', overlayAsset: shirtFit.asset }
+    : mode === 'clothing'
       ? { id: 'clothing', kind: 'clothing', overlayAsset: '/assets/overlay-clothing.svg' }
       : mode === 'jewelry' && !product?.accessoryKind
         ? { id: 'necklace', kind: 'necklace', overlayAsset: '/assets/overlay-necklace.svg' }
@@ -74,7 +85,7 @@ export default function TryOn() {
       : style.overlayAsset;
   const [source, setSource] = useState(null);
   const [inputMode, setInputMode] = useState('camera');
-  const [controls, setControls] = useState(() => controlsFor(mode));
+  const [controls, setControls] = useState(() => controlsFor(mode, isShirt));
   const [view, setView] = useState('after');
   const [compare, setCompare] = useState(50);
   const [retry, setRetry] = useState(0);
@@ -115,11 +126,11 @@ export default function TryOn() {
   }, []);
   const camera = useTryOnCamera(video, changeSource);
   useEffect(() => {
-    if (isAR && !arDebug) {
+    if ((isAR || isShirt) && !arDebug) {
       setControls((old) => ({ ...old, auto: true }));
       setView('after');
     }
-  }, [isAR, arDebug]);
+  }, [isAR, isShirt, arDebug]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -135,8 +146,8 @@ export default function TryOn() {
   );
   useEffect(() => {
     setStyleId(product?.accessoryStyle || 'aviator');
-    setControls(controlsFor(mode));
-  }, [product?.id, product?.accessoryStyle, mode]);
+    setControls(controlsFor(mode, isShirt));
+  }, [product?.id, product?.accessoryStyle, mode, isShirt]);
   useEffect(() => {
     uploadAttempt.current += 1;
     setLoadingPhoto(false);
@@ -216,7 +227,7 @@ export default function TryOn() {
       camera.stop();
       changeSource({
         element: snapshot.original,
-        ...(isAR ? { composite: snapshot.result } : {}),
+        ...(isAR || isShirt ? { composite: snapshot.result } : {}),
         mediaUrl: registerMedia(blob),
         live: false,
         mirrored: false,
@@ -339,22 +350,33 @@ export default function TryOn() {
         className={source ? 'face-canvas-wrap' : 'face-canvas-hidden'}
         style={arDebug ? { position: 'relative' } : undefined}
       >
-        <CanvasPreview
-          ref={preview}
-          source={source}
-          overlay={overlay}
-          leftTempleSrc={glassesAsset?.leftTempleSrc}
-          rightTempleSrc={glassesAsset?.rightTempleSrc}
-          fit={glassesAsset?.fit}
-          kind={style.kind}
-          controls={isAR && !arDebug ? { ...controls, auto: true } : controls}
-          arDebug={arDebug}
-          view={view}
-          compare={compare}
-          trackingEnabled={isAR}
-          retry={retry}
-          onStatus={onStatus}
-        />
+        {isShirt ? (
+          <ShirtOverlay
+            ref={preview}
+            source={source}
+            fit={shirtFit}
+            arDebug={arDebug}
+            retry={retry}
+            onStatus={onStatus}
+          />
+        ) : (
+          <CanvasPreview
+            ref={preview}
+            source={source}
+            overlay={overlay}
+            leftTempleSrc={glassesAsset?.leftTempleSrc}
+            rightTempleSrc={glassesAsset?.rightTempleSrc}
+            fit={glassesAsset?.fit}
+            kind={style.kind}
+            controls={isAR && !arDebug ? { ...controls, auto: true } : controls}
+            arDebug={arDebug}
+            view={view}
+            compare={compare}
+            trackingEnabled={isAR}
+            retry={retry}
+            onStatus={onStatus}
+          />
+        )}
       </div>
       {!source && (
         <div className="canvas-empty">
@@ -365,6 +387,35 @@ export default function TryOn() {
       )}
     </div>
   );
+  if (isShirt)
+    return (
+      <ShirtStudio
+        product={product}
+        products={products.filter((p) => modeFor(p) === 'clothing')}
+        chooseProduct={chooseProduct}
+        canvasStage={canvasStage}
+        source={source}
+        status={status}
+        notice={notice}
+        camera={camera}
+        busy={busy}
+        canExport={canExport}
+        onCamera={() => {
+          setInputMode('camera');
+          setInputError('');
+          camera.start();
+        }}
+        onStop={() => {
+          camera.stop();
+          changeSource(null);
+        }}
+        upload={upload}
+        capture={capture}
+        download={download}
+        reset={() => setRetry((n) => n + 1)}
+        retry={() => setRetry((n) => n + 1)}
+      />
+    );
   if (isAR && !arDebug) {
     const frames = accessoryStyles.filter((s) => s.kind === 'sunglasses' && s.src);
     const trackingLabel = source?.composite
