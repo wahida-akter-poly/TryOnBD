@@ -1,7 +1,7 @@
 import { Heart, ScanLine, ArrowUpRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { Badge, IconButton, Price, Rating } from '../common/UI';
+import { Badge, Button, IconButton, Price, Rating } from '../common/UI';
 import { supportsFaceAR } from '../../data/faceAccessories';
 import { useState } from 'react';
 
@@ -33,10 +33,11 @@ export function ProductImage({ product, className = '', ...props }) {
   );
 }
 export default function ProductCard({ product }) {
-  const { state, toggleWishlist } = useApp();
+  const { state, addToCart, toggleWishlist } = useApp();
   const wished = state.wishlist.includes(product.id);
   const seller = state.sellers.find((s) => s.id === product.sellerId);
   const category = state.categories.find((c) => c.id === product.categoryId);
+  const canTryOn = supportsFaceAR(product) || ['tshirt', 'SHIRT', 'CLOTHING'].includes(product.arType) || product.tryOnType === 'CLOTHING';
   return (
     <article className="product-card">
       <div className="product-image" style={{ background: product.color || '#eeeae2' }}>
@@ -51,10 +52,10 @@ export default function ProductCard({ product }) {
         >
           <Heart size={17} fill={wished ? 'currentColor' : 'none'} />
         </IconButton>
-        {supportsFaceAR(product) && (
+        {canTryOn && (
           <Link className="product-try" to={`/try-on?productId=${product.id}`}>
             <ScanLine size={15} />
-            Try it on
+            Try Virtually
             <ArrowUpRight size={15} />
           </Link>
         )}
@@ -81,6 +82,17 @@ export default function ProductCard({ product }) {
       <Link className="details-link" to={`/products/${product.id}`}>
         View details <ArrowUpRight size={12} />
       </Link>
+      <div className="product-card-actions">
+        {canTryOn && (
+          <Link className="btn btn-secondary" to={`/try-on?productId=${product.id}`}>
+            <ScanLine size={15} />
+            Try Virtually
+          </Link>
+        )}
+        <Button variant="secondary" disabled={!product.stockQuantity} onClick={() => addToCart(product)}>
+          Add to Cart
+        </Button>
+      </div>
     </article>
   );
 }

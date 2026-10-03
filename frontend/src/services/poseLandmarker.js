@@ -1,13 +1,21 @@
 // Dedicated worker: Pose's synchronous WASM inference never blocks face fitting
 // or the existing animation loop. Exactly one transferable frame is in flight.
 export const poseIntervalMs = 1000 / 15;
-export function acquirePoseLandmarker() {
+export function acquirePoseLandmarker({ segmentation = false } = {}) {
   let worker,
     pending,
     released = false,
     sequence = 0,
     failed = false;
-  const metrics = { calls: 0, inferenceMs: 0, maxInferenceMs: 0, error: '', lastSampleAt: null };
+  const metrics = {
+    calls: 0,
+    inferenceMs: 0,
+    maxInferenceMs: 0,
+    error: '',
+    lastSampleAt: null,
+    segmentationCalls: 0,
+    segmentationMs: 0,
+  };
   return {
     metrics,
     async detect(source, live, timestamp = performance.now(), faceRegion = null) {
@@ -32,6 +40,8 @@ export function acquirePoseLandmarker() {
               metrics.inferenceMs = data.inferenceMs;
               metrics.maxInferenceMs = Math.max(metrics.maxInferenceMs, data.inferenceMs);
               metrics.lastSampleAt = data.timestamp;
+              if (data.segmentation) metrics.segmentationCalls++;
+              metrics.segmentationMs = data.segmentationMs || 0;
             }
             const finish = pending;
             pending = null;
@@ -74,6 +84,7 @@ export function acquirePoseLandmarker() {
             bitmap,
             live,
             timestamp,
+            segmentation,
             roi: {
               x: roi.x / width,
               y: roi.y / height,

@@ -135,7 +135,7 @@ Storage uses a versioned `tryonbd:demo:v1` key and handles corrupt/unavailable s
 
 ## Virtual studio
 
-Sunglasses use live MediaPipe face landmarks; clothing and jewelry retain manual overlay previews. Start AR Camera, allow access, and face the camera. Use After to capture the visible composite, Before to see the original, or Compare with the split slider. Fine tuning adjusts the automatic fit; disabling Auto Align explicitly switches sunglasses to manual placement.
+Sunglasses use live MediaPipe face landmarks. T-shirt products with `arType: 'tshirt'` use the pose-aware shirt renderer; legacy clothing and jewelry retain manual overlay previews. Start AR Camera, allow access, and face the camera. Use After to capture the visible composite, Before to see the original, or Compare with the split slider. Fine tuning adjusts the automatic fit; disabling Auto Align explicitly switches sunglasses to manual placement.
 
 - `@mediapipe/tasks-vision` **0.10.32**, official float16 Face Landmarker **version 1**, one face, confidence thresholds 0.5. GPU initialization automatically retries on CPU. `npm run setup:vision` copies matching WASM and downloads the model to `public/mediapipe`; inference has no CDN or backend dependency. API choices were checked against the [official browser guide](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker/web_js) and the installed TypeScript declarations (`detectForVideo(video, timestampMs)`).
 - `CanvasPreview.jsx` owns the animation loop and composite rendering, `faceGeometry.js` owns fitting/smoothing, `useTryOnCamera.js` owns streams, and `faceLandmarker.js` owns the shared model. No detector is initialized during React rendering or on individual frames. Product/style changes reuse the current camera/model. Idle/manual/captured previews require no detector. Released models close after a one-second reuse window; late initialization and permission results are also cleaned up.
@@ -143,7 +143,7 @@ Sunglasses use live MediaPipe face landmarks; clothing and jewelry retain manual
 - Eye corner pairs 33/133 and 362/263 are verified against MediaPipe's [official eye connections](https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/python/solutions/face_mesh_connections.py). Normalized coordinates convert to the same mirrored canvas space as the camera. Canvas backing resolution preserves source aspect ratio, with a maximum side of 1280 pixels; CSS contains the canvas without cropping.
 - Sunglasses width is recomputed from the face-side span (234–454) in canvas pixels. Final width = smoothed face span × product `widthMultiplier` × user Scale. Each style has independent fit/offset settings in `src/data/faceAccessories.js`. Put final transparent product PNG/WebP photographs in `public/assets/face-ar/sunglasses/` and configure `src`; see the [asset and distance-check guide](public/assets/face-ar/sunglasses/README.md). The loader crops alpha bounds once per asset, preserves aspect ratio, and uses high-quality smoothing at 100% default opacity. Existing illustrations are labeled fallbacks until real photographs are supplied. Frontend-only `tryOnAsset` and legacy `tryOnImageUrl` overrides remain outside backend DTOs.
 - Capture AR Result is enabled in After when a face is tracked (or explicit manual fallback is selected). It copies the visible canvas, exports PNG with `toBlob`, and registers the Blob in AppContext. The original and immutable composite remain separate: captured glasses are never drawn twice, and no second inference can shift them. Retake/upload to adjust a capture; changing product/style clears the old capture. Save/download always export the After result even when Before/Compare is selected.
-- Upload PNG/JPEG/WebP up to 12 MB. Sunglasses photos run IMAGE detection, with an explicit Auto Align/manual fallback if detection fails. Clothing/jewelry never load the model. Camera denial, absent/busy/disconnected devices, missing model/WASM, failed delegates and invalid images produce actionable inline feedback.
+- Upload PNG/JPEG/WebP up to 12 MB. Sunglasses photos run IMAGE detection, with an explicit Auto Align/manual fallback if detection fails. T-shirt photos run Pose IMAGE detection; legacy manual clothing/jewelry do not load a detector. Camera denial, absent/busy/disconnected devices, missing model/WASM, failed delegates and invalid images produce actionable inline feedback.
 - Save posts exactly `{ userId, productId, inputImageUrl, tryOnType }`; sunglasses retain `FACE_AR`, manual modes use `CLOTHING`/`JEWELRY`. The input is an honest `urn:tryonbd:local-input:...` reference because the current controller validates text and does not upload/host photos. HTTP 2xx means controller validation; HTTP 400 never saves; offline offers explicit Save as Local Demo. Thumbnails stay in AppContext memory, and only metadata persists in localStorage. Cart uses the existing AppContext operation.
 
 ## Run and manually check sunglasses AR
@@ -179,13 +179,35 @@ npm run dev
 
 Run `npm test`, `npm run build`, and `npm run test:browser` from `frontend`. Browser tests use installed Microsoft Edge. Tests cover real MediaPipe IMAGE inference and VIDEO inference on a transformed portrait streamed through canvas.captureStream, plus deterministic dependency mocks for GPU-to-CPU fallback, all-delegate failure, duplicate frames, lost/reacquired faces, captures, local history, cart, manual modes and cancellation while permission/model loading is pending. These are automated browser tests, not physical-webcam testing.
 
-The preview is 2D and intended for near-front-facing use: no occlusion, 3D perspective or physical fit measurement. Main-thread MediaPipe inference can reduce responsiveness on slow devices; hardware webcam/mobile smoothness must be checked interactively. Model/WASM assets add roughly 26 MB before compression. Saved image previews last only for the current app visit; backend controllers do not persist data. Clothing/jewelry remain manual prototypes.
+Legacy manual previews are 2D and do not measure physical fit. Hardware webcam/mobile smoothness must be checked interactively. Model/WASM assets add roughly 26 MB before compression. Saved image previews last only for the current app visit; backend controllers do not persist data. Legacy clothing/jewelry remain manual prototypes; pose-aware T-shirt AR is described below.
 
-Next project task: **Real-time Shirt AR using MediaPipe Pose Landmarker**. After that: **Spring Data JPA + PostgreSQL entity/repository/service persistence** for the existing controllers.
+## Pose-aware T-shirt AR
+
+Open [normal T-shirt mode](http://127.0.0.1:5173/try-on?productId=tshirt-preview)
+or [debug mode](http://127.0.0.1:5173/try-on?productId=tshirt-preview&arDebug=1).
+The shirt uses shoulders (11/12), hips (23/24), elbows (13/14) and wrists (15/16)
+with the existing one-person Pose worker and camera lifecycle. Three connected
+regions fit the calibrated torso, left sleeve and right sleeve independently.
+Neck anchors, chest/waist/hem rows and short upper-arm cuffs control fit; separate
+affine meshes preserve texture. Tapered arm masks restore foreground source
+pixels. Temporal smoothing and shoulder fallback keep fitting stable.
+Live webcam, IMAGE uploads and exact composite exports use
+the same renderer. Diagnostics are separate DOM content only under `arDebug=1`.
+
+The working PNG at `public/assets/body-ar/shirts/tshirt-black-front.png` is
+authorized for implementation/testing; commercial product authenticity remains
+unconfirmed and final visual acceptance is pending. Missing/invalid PNGs yield
+`REAL_SHIRT_ASSET_REQUIRED`, with no fake garment fallback. The frontend preview
+entry does not create a backend product or change cart/save behavior.
+
+See [Shirt AR architecture, calibration and verification](SHIRT_AR.md) and the
+[required PNG format](public/assets/body-ar/shirts/README.md). This is pose-aware
+2.5D virtual try-on, not physical cloth simulation. Physical-webcam fitting and
+final product approval still require review.
 
 ## Image credits
 
-Editorial/product photographs are bundled locally for reliable presentations, downloaded from these Unsplash image sources. No company logo assets are included. Overlay vectors and the demo portrait are original frontend illustrations.
+Editorial/product photographs are bundled locally for reliable presentations, downloaded from these Unsplash image sources. Legacy overlay vectors and the demo portrait are original frontend illustrations. The externally supplied working T-shirt PNG has unconfirmed provenance, as described in the Shirt AR section above.
 
 - Editorial: `photo-1539109136881-3be0616acf4b`
 - Portrait: `photo-1534528741775-53994a69daeb`

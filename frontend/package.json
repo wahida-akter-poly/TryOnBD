@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test tests/contracts.test.js tests/faceGeometry.test.js tests/earTracking.test.js",
+    "test": "node --test tests/contracts.test.js tests/faceGeometry.test.js tests/earTracking.test.js tests/shirtGeometry.test.js tests/shirtSilhouette.test.js",
     "setup:vision": "node scripts/setup-vision.mjs",
     "assets:face": "node scripts/create-face-assets.mjs",
     "test:browser": "playwright test",

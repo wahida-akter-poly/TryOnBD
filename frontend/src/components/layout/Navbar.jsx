@@ -96,6 +96,7 @@ export default function Navbar() {
               label={
                 <>
                   <Avatar name={user.fullName} />
+                  {identity && <span className="nav-user-name">{user.fullName || user.name}</span>}
                   <ChevronDown size={12} />
                 </>
               }
@@ -104,9 +105,9 @@ export default function Navbar() {
               <Link to="/dashboard/customer/wishlist">My wishlist</Link>
               <Link to="/seller-register">Become a seller</Link>
               {identity ? (
-                <button onClick={logout}>Sign out of demo</button>
+                <button onClick={logout}>Sign out</button>
               ) : (
-                <Link to="/login">Demo sign in</Link>
+                <Link to="/login">Sign in</Link>
               )}
             </Dropdown>
             <IconButton
@@ -123,7 +124,7 @@ export default function Navbar() {
       <Drawer open={open} onClose={() => setOpen(false)} title="Explore TryOnBD">
         <nav className="mobile-links" onClick={() => setOpen(false)}>
           {links}
-          <Link to="/login">Sign in</Link>
+          {identity ? <button onClick={logout}>Sign out</button> : <Link to="/login">Sign in</Link>}
           <Link to="/api-playground">API Playground</Link>
         </nav>
         <RoleSwitcher />

@@ -43,6 +43,10 @@ export default function ProductDetails() {
   const seller = state.sellers.find((s) => s.id === product.sellerId);
   const category = state.categories.find((c) => c.id === product.categoryId);
   const wished = state.wishlist.includes(product.id);
+  const canTryOn =
+    supportsFaceAR(product) ||
+    ['tshirt', 'SHIRT', 'CLOTHING'].includes(product.arType) ||
+    product.tryOnType === 'CLOTHING';
   return (
     <div className="container page">
       <Breadcrumbs
@@ -88,7 +92,7 @@ export default function ProductDetails() {
               ? `${product.stockQuantity} available in demo stock`
               : 'Currently out of stock'}
           </div>
-          {supportsFaceAR(product) ? <Link className="btn btn-primary w-full" to={`/try-on?productId=${id}`}>
+          {canTryOn ? <Link className="btn btn-primary w-full" to={`/try-on?productId=${id}`}>
             <ScanLine size={18} />
             Try on virtually
             <ArrowUpRight size={17} />

@@ -1,0 +1,65 @@
+{
+  "file": "tests/fixtures/shirt-hands-on-hips.jpg",
+  "canvasWidth": 596,
+  "shoulderWidth": 259.3079164651864,
+  "maskQuality": 0.8836938763856255,
+  "mode": "SILHOUETTE_FUSED",
+  "widths": {
+    "0": 314.88789062499995,
+    "1": 356.6144140625,
+    "0.12": 305.60678400654524,
+    "0.24": 296.3256773880905,
+    "0.5": 300.6171093749999,
+    "0.74": 310.93945312499994
+  },
+  "poseWidths": {
+    "0": 298.20410393496434,
+    "1": 231.7694157365836,
+    "0.24": 296.3256773880905,
+    "0.5": 275.48069190720355,
+    "0.74": 254.4329276356409
+  },
+  "rows": [
+    {
+      "t": 0.5,
+      "total": 6,
+      "covered": 5,
+      "same": 5,
+      "left": 155.1171875,
+      "right": 132.5546875,
+      "inferred": false
+    },
+    {
+      "t": 0.74,
+      "total": 3,
+      "covered": 3,
+      "same": 3,
+      "left": 155.1171875,
+      "right": 141.01562500000003,
+      "inferred": true
+    },
+    {
+      "t": 1,
+      "total": 6,
+      "covered": 6,
+      "same": 6,
+      "left": 155.1171875,
+      "right": 186.140625,
+      "inferred": false
+    }
+  ],
+  "performance": {
+    "calls": 1,
+    "inferenceMs": 527.5,
+    "maxInferenceMs": 527.5,
+    "error": "",
+    "lastSampleAt": 4016.4000000001397,
+    "segmentationCalls": 1,
+    "segmentationMs": 7.2000000001862645,
+    "poseHz": 0,
+    "segmentationHz": 0,
+    "poseCalls": 1,
+    "silhouetteQuality": 0.8836938763856255,
+    "renderHz": 0.2023185708216176
+  }
+}

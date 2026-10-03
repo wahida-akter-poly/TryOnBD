@@ -1,49 +1,33 @@
 package com.tryonbd.backend.controller;
-
-import com.tryonbd.backend.request.CreateTryOnSessionRequest;
-import com.tryonbd.backend.request.UpdateTryOnResultRequest;
+import com.tryonbd.backend.request.*;
+import com.tryonbd.backend.response.TryOnSessionResponse;
+import com.tryonbd.backend.service.PersistenceService;
 import jakarta.validation.Valid;
+import java.net.URI;
+import java.util.List;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
+import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/try-on-sessions")
 public class TryOnSessionController {
-
-    // TODO: Integrate service layer and database in the next phase.
-
+    private final PersistenceService service;
+    public TryOnSessionController(PersistenceService service) { this.service = service; }
     @PostMapping
-    public ResponseEntity<CreateTryOnSessionRequest> create(@Valid @RequestBody CreateTryOnSessionRequest request) {
-        return ResponseEntity.ok(request);
+    public ResponseEntity<TryOnSessionResponse> create(@Valid @RequestBody CreateTryOnSessionRequest request) {
+        var result = service.createTryOnSession(request);
+        return ResponseEntity.created(URI.create("/api/try-on-sessions/" + result.id())).body(result);
     }
-
     @GetMapping
-    public ResponseEntity<String> getAll() {
-        return ResponseEntity.ok("Listing try-on-sessions: service/database integration will be implemented in the next phase.");
-    }
-
+    public List<TryOnSessionResponse> getAll() { return service.listTryOnSession(); }
     @GetMapping("/{id}")
-    public ResponseEntity<String> getById(@PathVariable("id") Integer id) {
-        return ResponseEntity.ok("Fetching try-on-sessions with ID " + id
-                + ": service/database integration will be implemented in the next phase.");
-    }
-
+    public TryOnSessionResponse getById(@PathVariable("id") Long id) { return service.getTryOnSession(id); }
     @PutMapping("/{id}/result")
-    public ResponseEntity<UpdateTryOnResultRequest> update(@PathVariable("id") Integer id,
-            @Valid @RequestBody UpdateTryOnResultRequest request) {
-        return ResponseEntity.ok(request);
+    public TryOnSessionResponse update(@PathVariable("id") Long id, @Valid @RequestBody UpdateTryOnResultRequest request) {
+        return service.updateTryOnSession(id, request);
     }
-
     @DeleteMapping("/{id}")
-    public ResponseEntity<String> delete(@PathVariable("id") Integer id) {
-        return ResponseEntity.ok("Deleting try-on-sessions with ID " + id
-                + ": service/database integration will be implemented in the next phase.");
+    public ResponseEntity<Void> delete(@PathVariable("id") Long id) {
+        service.deleteTryOnSession(id);
+        return ResponseEntity.noContent().build();
     }
 }

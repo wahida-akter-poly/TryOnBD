@@ -29,4 +29,6 @@ try {
   if (!response.ok) throw new Error(`Pose model download failed: HTTP ${response.status}`);
   await writeFile(poseModel, Buffer.from(await response.arrayBuffer()));
 }
-console.log('MediaPipe WASM, version 1 face model and lite pose model ready in public/mediapipe.');
+console.log(
+  'MediaPipe WASM, version 1 face model and lite pose model (including person segmentation) ready in public/mediapipe.',
+);

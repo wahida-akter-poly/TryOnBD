@@ -1,0 +1,65 @@
+{
+  "file": "public/assets/shirt.jpg",
+  "canvasWidth": 1000,
+  "shoulderWidth": 404.3182552198382,
+  "maskQuality": 0.9621316996061134,
+  "mode": "SILHOUETTE_FUSED",
+  "widths": {
+    "0": 499.0829268292687,
+    "1": 431.1654334251556,
+    "0.12": 445.94014502307215,
+    "0.24": 455.529070533949,
+    "0.5": 526.068292682927,
+    "0.74": 495.8048780487809
+  },
+  "poseWidths": {
+    "0": 464.96599350281394,
+    "1": 431.1654334251556,
+    "0.24": 470.41140529116115,
+    "0.5": 454.7733027344971,
+    "0.74": 438.97268005874963
+  },
+  "rows": [
+    {
+      "t": 0.24,
+      "total": 3,
+      "covered": 3,
+      "same": 3,
+      "left": 244.69347396176684,
+      "right": 191.2195121951221,
+      "inferred": true
+    },
+    {
+      "t": 0.5,
+      "total": 6,
+      "covered": 5,
+      "same": 5,
+      "left": 277.07317073170736,
+      "right": 226.34146341463432,
+      "inferred": true
+    },
+    {
+      "t": 0.74,
+      "total": 6,
+      "covered": 6,
+      "same": 6,
+      "left": 234.1463414634148,
+      "right": 238.04878048780503,
+      "inferred": false
+    }
+  ],
+  "performance": {
+    "calls": 1,
+    "inferenceMs": 1514.6000000000931,
+    "maxInferenceMs": 1514.6000000000931,
+    "error": "",
+    "lastSampleAt": 8531.899999999907,
+    "segmentationCalls": 1,
+    "segmentationMs": 19.899999999906868,
+    "poseHz": 0,
+    "segmentationHz": 0,
+    "poseCalls": 1,
+    "silhouetteQuality": 0.9621316996061134,
+    "renderHz": 0.056064810921425165
+  }
+}
