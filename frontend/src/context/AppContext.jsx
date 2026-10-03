@@ -21,6 +21,8 @@ export function AppProvider({ children }) {
       return null;
     }
   });
+  const [authUser, setAuthUser] = useState(() => identity?.user || null);
+  const [token, setToken] = useState(() => localStorage.getItem('tryonbd:token') || sessionStorage.getItem('tryonbd:token') || null);
   const [online, setOnline] = useState(null);
   const [fallback, setFallback] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
@@ -58,26 +60,41 @@ export function AppProvider({ children }) {
     return () => clearTimeout(timer);
   }, [toasts]);
   const user =
+    authUser ||
     state.users.find((u) => String(u.id) === String(identity?.userId)) ||
     state.users[0] ||
     seed.users[0];
-  function login(demoRole, remember, userId = user.id) {
-    const value = { userId, role: demoRole };
+  function login(demoRole, remember, userId = user.id, authToken = null, nextUser = null) {
+    const safeUser = nextUser
+      ? { ...nextUser, fullName: nextUser.fullName || nextUser.name || nextUser.email }
+      : null;
+    const value = { userId, role: demoRole, user: safeUser };
     setRole(demoRole);
     setIdentity(value);
+    setAuthUser(safeUser);
+    setToken(authToken);
     try {
       localStorage.removeItem('tryonbd:identity');
       sessionStorage.removeItem('tryonbd:identity');
+      localStorage.removeItem('tryonbd:token');
+      sessionStorage.removeItem('tryonbd:token');
       (remember ? localStorage : sessionStorage).setItem('tryonbd:identity', JSON.stringify(value));
+      if (authToken) {
+        (remember ? localStorage : sessionStorage).setItem('tryonbd:token', authToken);
+      }
     } catch {
       toast('Demo login is in memory only.', 'info');
     }
   }
   function logout() {
     setIdentity(null);
+    setAuthUser(null);
+    setToken(null);
     try {
       localStorage.removeItem('tryonbd:identity');
       sessionStorage.removeItem('tryonbd:identity');
+      localStorage.removeItem('tryonbd:token');
+      sessionStorage.removeItem('tryonbd:token');
     } catch {
       /* Storage may be blocked. */
     }
@@ -183,6 +200,7 @@ export function AppProvider({ children }) {
         setRole,
         user,
         identity,
+        token,
         login,
         logout,
         online,

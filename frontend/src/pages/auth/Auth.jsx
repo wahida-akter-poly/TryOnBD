@@ -6,6 +6,7 @@ import { Button, ErrorState, Input, PasswordInput, Select } from '../../componen
 import DemoNotice from '../../components/common/DemoNotice';
 import { useAsync } from '../../hooks/useAsync';
 import { roles } from '../../utils/format';
+import { services } from '../../services';
 
 export default function Auth() {
   const { pathname } = useLocation();
@@ -65,39 +66,59 @@ export default function Auth() {
           setError('Please complete every required field with a nonblank value.');
           return;
         }
-        const payload = seller
-          ? {
-              userId: user.testId || 1,
-              businessName: values.businessName.trim(),
-              contactEmail: values.email,
-              phone: values.phone,
-              subscriptionStatus: values.subscriptionStatus,
-            }
-          : {
+        if (!seller) {
+          try {
+            const { data } = await services.auth.register({
               fullName: values.fullName.trim(),
               email: values.email,
               password: values.password,
               phone: values.phone,
               address: values.address,
-            };
+            });
+            login('customer', remember, data.user.id, data.accessToken, data.user);
+            toast('Account created successfully.');
+            navigate('/products');
+            return;
+          } catch (error) {
+            setError(error.response?.data?.message || 'Registration failed.');
+            return;
+          }
+        }
+        const payload = {
+          userId: user.testId || 1,
+          businessName: values.businessName.trim(),
+          contactEmail: values.email,
+          phone: values.phone,
+          subscriptionStatus: values.subscriptionStatus,
+        };
         const result = await mutate(
-          seller ? 'sellers' : 'users',
+          'sellers',
           'create',
           payload,
           null,
-          seller ? { userId: user.id, moderationStatus: 'PENDING' } : {},
+          { userId: user.id, moderationStatus: 'PENDING' },
         );
         if (!result.ok) {
           setError(result.error);
           return;
         }
-        login(seller ? 'seller' : 'customer', remember, seller ? user.id : result.record.id);
-        navigate(`/dashboard/${seller ? 'seller' : 'customer'}`);
+        login('seller', remember, user.id);
+        navigate('/dashboard/seller');
       } else {
-        await new Promise((resolve) => setTimeout(resolve, 350));
-        login(values.role, remember);
-        toast('Entered the demo workspace. Credentials were not authenticated.');
-        navigate(`/dashboard/${values.role}`);
+        try {
+          const { data } = await services.auth.login({
+            email: values.email,
+            password: values.password,
+          });
+          const nextRole = data.user.role?.toLowerCase() || values.role;
+          login(nextRole, remember, data.user.id, data.accessToken, data.user);
+          toast('Signed in successfully.');
+          navigate(nextRole === 'seller' ? '/dashboard/seller' : '/products');
+          return;
+        } catch (error) {
+          setError(error.response?.data?.message || 'Authentication failed.');
+          return;
+        }
       }
     });
   }
@@ -124,7 +145,7 @@ export default function Auth() {
         <p className="muted mb-6">
           {seller
             ? 'Bring your collection into our seller demonstration.'
-            : 'Explore a frontend-only account experience.'}
+            : 'Sign in with your TryOnBD account.'}
         </p>
         {complete ? (
           <div className="notice">
@@ -145,8 +166,7 @@ export default function Auth() {
             {(register || seller) && <DemoNotice compact />}
             {loginPage && (
               <div className="notice text-sm">
-                Demo access only. Any valid-format email and a password of 8+ characters opens the
-                selected demo role. No credentials are verified or stored.
+                Use your registered email and password. Your session is secured with a bearer token.
               </div>
             )}
             {register && (
@@ -253,12 +273,12 @@ export default function Auth() {
               {seller
                 ? 'Create demo seller'
                 : register
-                  ? 'Create demo account'
+                  ? 'Create account'
                   : forgot
                     ? 'Preview password recovery'
                     : reset
                       ? 'Preview password reset'
-                      : 'Enter demo workspace'}
+                      : 'Sign in'}
               <ArrowUpRight size={17} />
             </Button>
           </form>
