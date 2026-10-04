@@ -1,7 +1,7 @@
 # TryOnBD production integration
 
-Branch: `feature/backend-driven-production-ui`  
-Worktree: `E:\AOOP\TryOnBD-PRODUCTION`  
+Branch: `feature/backend-driven-production-ui`
+Worktree: `E:\AOOP\TryOnBD-PRODUCTION`
 Base: `demo/final-integration` (`8bc8467`). The original dirty worktree and existing feature commits are untouched.
 
 ## Run locally (PowerShell)
@@ -107,3 +107,16 @@ Read-only live smoke checks returned 200 for `/api/products`, products 1/2/3 and
 Checkpoint commits: `e656877` (backend ownership/persistence/auth) and `aeb2054` (production frontend, roles, AR and tests). Documentation/formatting is recorded as a separate final commit. No merge or history rewrite was performed.
 
 The cart explicitly blocks checkout when catalog pricing is unavailable, and deleted products can be removed without inventing a zero total. Authentication restore and the role/ownership checks are exercised in the acceptance suites. Live physical camera hardware was not exercised during this pass; its existing implementation is preserved.
+
+## Push status
+
+Local implementation and all required verification are complete. The push was attempted, but this execution session has no GitHub login: Git cannot obtain a username in a non-interactive shell, `gh auth status` reports no authenticated host, and no credential manager was found at the standard Git installation path. Nothing was force pushed or merged.
+
+Once GitHub authentication is available, publish the committed branch:
+
+```powershell
+Set-Location E:\AOOP\TryOnBD-PRODUCTION
+gh auth login --hostname github.com --git-protocol https --web
+gh auth setup-git
+git push -u origin feature/backend-driven-production-ui
+```
