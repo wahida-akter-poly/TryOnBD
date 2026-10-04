@@ -22,7 +22,26 @@ import { errorMessage } from '../../services/api';
 import ShirtOverlay from '../../components/tryon/ShirtOverlay.jsx';
 import ShirtStudio from '../../components/tryon/ShirtStudio.jsx';
 import { shirtCalibration, shirtPreviewProduct } from '../../data/shirtProducts.js';
+import NecklaceOverlay from '../../components/tryon/NecklaceOverlay.jsx';
 
+const necklacePreviewProduct = {
+  id: 'necklace-preview',
+  testId: 1,
+  name: 'Zariya Bridal Necklace',
+  price: 3290,
+  categoryId: 7,
+  sellerId: 3,
+  stockQuantity: 9,
+  rating: 4.9,
+  imageUrl: '/assets/necklace.jpg',
+  asset: 'necklace',
+  arType: 'NECKLACE',
+  tryOnType: 'NECKLACE',
+  badge: 'Preview',
+  color: '#eee9e0',
+  sync: 'Demo',
+  description: 'A local necklace preview for the browser-only virtual try-on demo.',
+};
 
 const blobFrom = (canvas) =>
   new Promise((resolve, reject) =>
@@ -43,12 +62,14 @@ async function thumbnail(canvas) {
 const modeFor = (product) =>
   product?.accessoryKind === 'sunglasses' || product?.tryOnType === 'SUNGLASSES'
     ? 'sunglasses'
+    : product?.arType === 'NECKLACE' || product?.tryOnType === 'NECKLACE'
+      ? 'necklace'
       : product?.arType === 'tshirt' || product?.tryOnType === 'CLOTHING'
       ? 'clothing'
       : 'jewelry';
 const controlsFor = (mode, shirt = false) => ({
   ...defaultControls(),
-  auto: mode === 'sunglasses' || shirt,
+  auto: mode === 'sunglasses' || mode === 'necklace' || shirt,
 });
 
 export default function TryOn() {
@@ -60,9 +81,11 @@ export default function TryOn() {
     ...state.products.filter(
       (p) =>
         p.arType === 'tshirt' ||
-        ['FACE_AR', 'SUNGLASSES', 'CLOTHING', 'JEWELRY'].includes(p.tryOnType),
+        ['FACE_AR', 'SUNGLASSES', 'CLOTHING', 'JEWELRY', 'NECKLACE'].includes(p.tryOnType) ||
+        p.arType === 'NECKLACE',
     ),
     shirtPreviewProduct,
+    necklacePreviewProduct,
   ];
   const requested = params.get('productId') || params.get('product');
   const product =
@@ -71,11 +94,14 @@ export default function TryOn() {
     products[0];
   const mode = modeFor(product),
     isAR = mode === 'sunglasses';
+  const isNecklace = mode === 'necklace';
   const isShirt = product?.arType === 'tshirt';
   const shirtFit = useMemo(() => (isShirt ? shirtCalibration(product) : null), [product, isShirt]);
   const [styleId, setStyleId] = useState(product?.accessoryStyle || 'aviator');
   const style = isShirt
     ? { id: 'tshirt', kind: 'tshirt', overlayAsset: shirtFit.asset }
+    : isNecklace
+      ? { id: 'necklace', kind: 'necklace', overlayAsset: '/assets/overlay-necklace.svg' }
     : mode === 'clothing'
       ? { id: 'clothing', kind: 'clothing', overlayAsset: '/assets/overlay-clothing.svg' }
       : mode === 'jewelry' && !product?.accessoryKind
@@ -130,11 +156,11 @@ export default function TryOn() {
   }, []);
   const camera = useTryOnCamera(video, changeSource);
   useEffect(() => {
-    if ((isAR || isShirt ) && !arDebug) {
+    if ((isAR || isShirt || isNecklace) && !arDebug) {
       setControls((old) => ({ ...old, auto: true }));
       setView('after');
     }
-  }, [isAR, isShirt, arDebug]);
+  }, [isAR, isShirt, isNecklace, arDebug]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -231,7 +257,7 @@ export default function TryOn() {
       camera.stop();
       changeSource({
         element: snapshot.original,
-        ...(isAR || isShirt  ? { composite: snapshot.result } : {}),
+        ...(isAR || isShirt || isNecklace ? { composite: snapshot.result } : {}),
         mediaUrl: registerMedia(blob),
         live: false,
         mirrored: false,
@@ -363,6 +389,14 @@ export default function TryOn() {
             retry={retry}
             onStatus={onStatus}
           />
+        ) : isNecklace ? (
+          <NecklaceOverlay
+            ref={preview}
+            source={source}
+            overlay={overlay}
+            retry={retry}
+            onStatus={onStatus}
+          />
         ) : (
           <CanvasPreview
             ref={preview}
@@ -420,6 +454,142 @@ export default function TryOn() {
         retry={() => setRetry((n) => n + 1)}
       />
     );
+  if (isNecklace && !arDebug) {
+    const trackingLabel = source?.composite
+      ? 'Captured'
+      : loadingPhoto
+        ? 'Opening photo...'
+        : status.tracking === 'Active'
+          ? 'Pose detected'
+          : status.tracking === 'Lost'
+            ? 'Keep both shoulders in view'
+            : source
+              ? 'Finding your shoulders...'
+              : 'Ready when you are';
+    return (
+      <div className="studio-page face-studio simple-eyewear">
+        <div className="container">
+          <header className="eyewear-heading">
+            <Link to={`/products/${product.id}`}>Back to product</Link>
+            <h1>Necklace Virtual Try-On</h1>
+            <p>{product.name}</p>
+          </header>
+          <fieldset disabled={busy} className="face-fieldset eyewear-studio">
+            <section className="studio-preview" aria-label="Try-on preview">
+              <div className="preview-toolbar">
+                <span role="status">{trackingLabel}</span>
+              </div>
+              {canvasStage}
+            </section>
+            <div className="eyewear-input" role="group" aria-label="Input source">
+              <Button
+                variant="studio"
+                busy={cameraBusy}
+                disabled={camera.status === 'Camera Active'}
+                onClick={() => {
+                  setInputMode('camera');
+                  setInputError('');
+                  setView('after');
+                  camera.start();
+                }}
+              >
+                <Camera size={18} />
+                {source?.kind === 'snapshot' ? 'Retake' : 'Start Camera'}
+              </Button>
+              <label className="btn btn-studio eyewear-upload">
+                <Upload size={18} /> Upload Photo
+                <input
+                  aria-label="Upload photo"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(event) => {
+                    setInputMode('upload');
+                    upload(event);
+                  }}
+                />
+              </label>
+              {(source?.live || cameraBusy) && (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    camera.stop();
+                    changeSource(null);
+                  }}
+                >
+                  Stop camera
+                </Button>
+              )}
+              {camera.devices.length > 1 && source?.live && (
+                <Button variant="ghost" onClick={camera.switchCamera}>
+                  Switch camera
+                </Button>
+              )}
+            </div>
+            {notice && (
+              <p className="face-feedback face-error" role="alert">
+                {status.detectorError
+                  ? 'We could not fit the necklace. Try again with both shoulders visible.'
+                  : notice}
+              </p>
+            )}
+            {status.bodyNotice && source && !source.composite && (
+              <p className="face-feedback" role="status">
+                {status.bodyNotice}
+              </p>
+            )}
+            {source && !source.composite && ['Unavailable', 'Lost'].includes(status.tracking) && (
+              <Button variant="ghost" onClick={() => setRetry((n) => n + 1)}>
+                Try fitting again
+              </Button>
+            )}
+            <div className="eyewear-primary-actions">
+              <Button disabled={!source?.live || !canExport} onClick={capture}>
+                <Camera size={18} />
+                Capture
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={!product?.stockQuantity}
+                onClick={() => addToCart(product)}
+              >
+                <ShoppingBag size={18} />
+                Add to Cart
+              </Button>
+            </div>
+            {canExport && (
+              <div className="eyewear-secondary-actions">
+                <Button variant="ghost" onClick={download}>
+                  <Download size={16} />
+                  Download PNG
+                </Button>
+                <Button variant="ghost" disabled={Boolean(saved)} onClick={save}>
+                  <Save size={16} />
+                  {saved ? 'Try-On saved' : 'Save Try-On'}
+                </Button>
+              </div>
+            )}
+            {saveError && (
+              <p className="face-feedback face-error" role="alert">
+                {saveError}
+              </p>
+            )}
+            {pendingLocal && (
+              <Button variant="ghost" onClick={() => storeSession(pendingLocal, false)}>
+                Save on this device
+              </Button>
+            )}
+            {saved && (
+              <p role="status">
+                Try-on saved.{' '}
+                <Link to="/dashboard/customer/try-on-history">View saved try-ons</Link>
+              </p>
+            )}
+            <p className="eyewear-privacy">Your camera and photos stay in your browser.</p>
+          </fieldset>
+        </div>
+      </div>
+    );
+  }
   if (isAR && !arDebug) {
     const frames = accessoryStyles.filter((s) => s.kind === 'sunglasses' && s.src);
     const trackingLabel = source?.composite
@@ -640,11 +810,13 @@ export default function TryOn() {
             <p>
               {isAR
                 ? 'Sunglasses that follow your face in real time.'
+                : isNecklace
+                  ? 'A necklace preview that follows your shoulders.'
                   : 'Adjust a manual overlay on your camera or photo.'}
             </p>
           </div>
           <Badge tone="dark">
-            {isAR  ? 'LIVE AR TRY-ON' : 'MANUAL DEMO OVERLAY'}
+            {isAR || isNecklace ? 'LIVE AR TRY-ON' : 'MANUAL DEMO OVERLAY'}
           </Badge>
         </header>
         <div className="face-mode-bar">
@@ -652,6 +824,7 @@ export default function TryOn() {
             label="Try-on mode"
             tabs={[
               { value: 'sunglasses', label: 'Sunglasses' },
+              { value: 'necklace', label: 'Necklace' },
               { value: 'clothing', label: 'Clothing' },
               { value: 'jewelry', label: 'Jewelry' },
             ]}
@@ -659,7 +832,7 @@ export default function TryOn() {
             onChange={chooseMode}
           />
           <span className="text-sm">
-            {isAR 
+            {isAR || isNecklace
               ? 'Powered by real-time face landmarks'
               : 'Prototype / Demo Processing · No AI model'}
           </span>
@@ -760,7 +933,7 @@ export default function TryOn() {
                   <Camera size={16} />
                   {source?.kind === 'snapshot'
                     ? 'Retake with camera'
-                    : isAR 
+                    : isAR || isNecklace
                       ? 'Start AR Camera'
                       : 'Start camera'}
                 </Button>
@@ -797,6 +970,8 @@ export default function TryOn() {
               <span role="status">
                 {isAR
                   ? `Face Tracking: ${status.tracking}`
+                  : isNecklace
+                    ? `Pose Tracking: ${status.tracking}`
                     : 'Manual overlay preview'}
               </span>
               <span>
@@ -851,12 +1026,14 @@ export default function TryOn() {
                 {notice}
               </p>
             )}
-            {(isAR ) && source && status.tracking === 'Lost' && (
+            {(isAR || isNecklace) && source && status.tracking === 'Lost' && (
               <p className="face-feedback" role="status">
-                No face detected. Please face the camera directly or upload another photo.
+                {isNecklace
+                  ? 'No shoulder pose detected. Keep both shoulders in view or upload another photo.'
+                  : 'No face detected. Please face the camera directly or upload another photo.'}
               </p>
             )}
-            {(isAR ) &&
+            {(isAR || isNecklace) &&
               source &&
               !source.composite &&
               ['Unavailable', 'Lost'].includes(status.tracking) && (
@@ -882,7 +1059,7 @@ export default function TryOn() {
                 onClick={capture}
               >
                 <Camera size={16} />
-                {isAR  ? 'Capture AR Result' : 'Capture snapshot'}
+                {isAR || isNecklace ? 'Capture AR Result' : 'Capture snapshot'}
               </Button>
               <Button variant="studio" disabled={!canExport} onClick={download}>
                 <Download size={16} />
@@ -892,10 +1069,10 @@ export default function TryOn() {
           </section>
           <aside className="studio-panel controls-panel">
             <h2>
-              03 <span>{isAR  ? 'Fine tune' : 'Make it yours'}</span>
+              03 <span>{isAR || isNecklace ? 'Fine tune' : 'Make it yours'}</span>
             </h2>
             <fieldset disabled={Boolean(source?.composite)} className="face-fieldset">
-              {(isAR ) && (
+              {(isAR || isNecklace) && (
                 <label className="face-check">
                   <input
                     type="checkbox"
@@ -909,7 +1086,9 @@ export default function TryOn() {
                 {source?.composite
                   ? 'Result captured. Retake or upload a photo to adjust the fit.'
                   : controls.auto
-                    ? 'Follows your face. Use offsets to fine-tune the fit.'
+                    ? isNecklace
+                      ? 'Follows your shoulders. Move naturally and capture when it sits well.'
+                      : 'Follows your face. Use offsets to fine-tune the fit.'
                     : 'Manual placement. Position your accessory with the controls.'}
               </p>
               {style.kind === 'earrings' && (

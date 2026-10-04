@@ -238,6 +238,14 @@ test('camera permission denial is actionable and upload remains usable', async (
   await expect(page.locator('canvas')).toBeVisible();
 });
 
+test('necklace products open the necklace virtual try-on studio', async ({ page }) => {
+  await mockApi(page);
+  await page.goto('/try-on?productId=necklace-preview');
+  await expect(page.getByRole('heading', { name: 'Necklace Virtual Try-On' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start Camera' })).toBeVisible();
+  await expect(page.getByLabel('Upload photo')).toBeAttached();
+});
+
 test('API Playground shows actual 200, 400 and offline results and all 35 routes', async ({
   page,
 }) => {

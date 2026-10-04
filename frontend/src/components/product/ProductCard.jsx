@@ -39,8 +39,8 @@ export default function ProductCard({ product }) {
   const category = state.categories.find((c) => c.id === product.categoryId);
   const canTryOn =
     supportsFaceAR(product) ||
-    ['tshirt', 'SHIRT', 'CLOTHING'].includes(product.arType) ||
-    ['CLOTHING'].includes(product.tryOnType);
+    ['tshirt', 'SHIRT', 'CLOTHING', 'NECKLACE'].includes(product.arType) ||
+    ['CLOTHING', 'NECKLACE'].includes(product.tryOnType);
   return (
     <article className="product-card">
       <div className="product-image" style={{ background: product.color || '#eeeae2' }}>
