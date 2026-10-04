@@ -115,7 +115,7 @@ export function Badge({ children, tone = 'neutral' }) {
 export function StatusChip({ status }) {
   const good = ['ACTIVE', 'DELIVERED', 'Controller validated', 'Online'].includes(status);
   const bad = ['SUSPENDED', 'CANCELLED', 'Offline', 'Local / Unsynced'].includes(status);
-  return <Badge tone={good ? 'green' : bad ? 'amber' : 'neutral'}>{status || 'Demo'}</Badge>;
+  return <Badge tone={good ? 'green' : bad ? 'amber' : 'neutral'}>{status || 'Unknown'}</Badge>;
 }
 export function Price({ value, className = '' }) {
   return <span className={`price ${className}`}>{money(value)}</span>;
@@ -144,7 +144,7 @@ export function Rating({ value = 0, onChange }) {
     </span>
   );
 }
-export function Avatar({ name = 'Demo User', size = '' }) {
+export function Avatar({ name = 'Account', size = '' }) {
   return (
     <span className={`avatar ${size}`} aria-label={name}>
       {name
@@ -204,10 +204,7 @@ export function ConfirmDialog({
 }) {
   return (
     <Modal open={open} onClose={onClose} title={title}>
-      <p className="muted mb-6">
-        {children ||
-          'This removes the local demo record after a successful controller response, or an explicitly enabled offline fallback.'}
-      </p>
+      <p className="muted mb-6">{children || 'This removes the record from the server.'}</p>
       <div className="flex justify-end gap-3">
         <Button variant="secondary" onClick={onClose}>
           Cancel
@@ -272,14 +269,15 @@ export function Breadcrumbs({ items }) {
 }
 export function EmptyState({
   title = 'Nothing here yet',
-  description = 'Your next favorite find is waiting.',
+  description = 'Records will appear here when they are available.',
+  text,
   action,
 }) {
   return (
     <div className="empty-state">
       <PackageOpen size={38} strokeWidth={1.3} />
       <h3>{title}</h3>
-      <p>{description}</p>
+      <p>{text || description}</p>
       {action}
     </div>
   );
@@ -325,11 +323,11 @@ export function StatCard({ label, value, hint, icon: Icon }) {
         {Icon && <Icon size={18} />}
       </div>
       <strong>{value}</strong>
-      <small>{hint || 'Frontend demo data'}</small>
+      <small>{hint || ''}</small>
     </article>
   );
 }
-export function ChartCard({ title, description = 'Simulated demonstration data', children }) {
+export function ChartCard({ title, description = '', children }) {
   return (
     <section className="panel chart-card">
       <div className="panel-heading">

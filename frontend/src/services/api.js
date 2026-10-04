@@ -1,5 +1,9 @@
 import axios from 'axios';
-import { normalizeBaseUrl } from './contracts';
+const normalizeBaseUrl = (value = '') =>
+  value
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/api$/, '');
 
 export const api = axios.create({
   baseURL: normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL),
@@ -25,6 +29,19 @@ api.interceptors.response.use(
     const gateway =
       [502, 503, 504].includes(error.response?.status) ||
       (error.response?.status === 500 && !error.response?.data);
+    const currentToken =
+      localStorage.getItem('tryonbd:token') || sessionStorage.getItem('tryonbd:token');
+    if (
+      error.response?.status === 401 &&
+      currentToken &&
+      error.config?.headers?.Authorization === `Bearer ${currentToken}`
+    ) {
+      for (const storage of [localStorage, sessionStorage]) {
+        storage.removeItem('tryonbd:token');
+        storage.removeItem('tryonbd:identity');
+      }
+      window.dispatchEvent(new Event('tryonbd:unauthorized'));
+    }
     error.backendOffline = !error.response || gateway;
     publish({ online: !error.backendOffline, status: error.response?.status });
     return Promise.reject(error);
@@ -33,7 +50,7 @@ api.interceptors.response.use(
 export const sendRequest = ({ method, path, data }) => api.request({ method, url: path, data });
 export function errorMessage(error) {
   if (error.backendOffline || !error.response)
-    return 'Backend Offline — start Spring Boot or explicitly enable Local Demo Fallback.';
+    return 'The backend is unavailable. Please try again shortly.';
   const body = error.response.data;
   const detail =
     typeof body === 'string'

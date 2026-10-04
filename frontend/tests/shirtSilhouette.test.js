@@ -179,7 +179,7 @@ test('silhouette ease metadata is validated independently of original garment ca
   assert.throws(() => shirtCalibration({ shirtAR: { silhouette: { waistEase: 0.5 } } }));
   assert.equal(shirtCalibration().hemLengthExtension, 0.07);
 });
-test('worker defaults to masks disabled, transfers copied shirt masks, and preserves Pose when mask extraction fails', async () => {
+test('integrated pose worker preserves landmarks when optional masks are unavailable', async () => {
   const code = readFileSync(
     new URL('../src/services/poseLandmarker.worker.js', import.meta.url),
     'utf8',
@@ -245,15 +245,16 @@ test('worker defaults to masks disabled, transfers copied shirt masks, and prese
   });
   await self.onmessage(message(false));
   assert.equal(options[0].outputSegmentationMasks, false);
-  assert.equal(responses[0].data.segmentation, null);
+  assert.equal(responses[0].data.segmentation, undefined);
   await self.onmessage(message(true));
-  assert.deepEqual([...responses[1].data.segmentation.pixels], [0, 128, 255, 255]);
-  assert.equal(responses[1].transfers.length, 1);
+  assert.equal(responses[1].data.segmentation, undefined);
+  assert.equal(responses[1].data.landmarks.length, 1);
+  assert.equal(responses[1].transfers, undefined);
   assert.equal(source[1], 0.5);
   throws = true;
   await self.onmessage(message(true));
   assert.equal(responses[2].data.landmarks.length, 1);
-  assert.equal(responses[2].data.segmentation, null);
-  assert.match(responses[2].data.segmentationError, /Mask unavailable/);
+  assert.equal(responses[2].data.segmentation, undefined);
+  assert.equal(responses[2].data.segmentationError, undefined);
   assert.equal(closed, 3);
 });

@@ -78,8 +78,8 @@ for (const scenario of scenarios)
     await expect.poll(() => page.evaluate(() => !!window.__tryOnShirtDebug?.garment)).toBe(true);
     const metrics = await page.evaluate(
       async ({ src, mirrored, live }) => {
-        const { shirtCalibration, shirtPreviewProduct } =
-          await import('/src/data/shirtProducts.js');
+        const {shirtCalibration}=await import('/src/data/shirtProducts.js');
+        const {shirtPreviewProduct}=await import('/tests/fixtures/shirtProduct.js');
         const { loadShirtAsset } = await import('/src/components/tryon/shirtAssets.js');
         const { drawShirt } = await import('/src/components/tryon/shirtWarp.js');
         const { sleevePatchPoint, structuredGarmentGeometry } =

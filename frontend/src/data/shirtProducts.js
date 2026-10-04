@@ -141,20 +141,3 @@ export function shirtCalibration(product = {}) {
       throw new Error('Invalid shirt source region');
   return fit;
 }
-
-// A preview entry, not an invented sellable/backend product. Existing products
-// opt in with arType:'tshirt' and shirtAR calibration without catalog migration.
-export const shirtPreviewProduct = Object.freeze({
-  id: 'tshirt-preview',
-  name: 'Black T-Shirt · AR preview',
-  tryOnType: 'CLOTHING',
-  arType: 'tshirt',
-  previewOnly: true,
-  stockQuantity: 0,
-  shirtAR: Object.freeze({
-    ...defaultShirtCalibration,
-    // Working PNG calibration only; commercial product authenticity remains
-    // unconfirmed. Coordinates are relative to measured visible alpha bounds.
-    sourceLandmarks: structuredSourceLandmarks,
-  }),
-});

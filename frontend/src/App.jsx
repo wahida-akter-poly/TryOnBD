@@ -14,7 +14,6 @@ import Auth from './pages/auth/Auth';
 const TryOn = lazy(() => import('./pages/public/TryOn'));
 const DashboardLayout = lazy(() => import('./layouts/DashboardLayout'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
-const ApiPlayground = lazy(() => import('./pages/ApiPlayground'));
 
 class ErrorBoundary extends Component {
   state = { error: null };
@@ -25,7 +24,7 @@ class ErrorBoundary extends Component {
     return this.state.error ? (
       <div className="container page">
         <ErrorState
-          message="This view couldn’t load. Your local demo records are still in this browser."
+          message="This view could not load. Please try again."
           retry={() => window.location.reload()}
         />
       </div>
@@ -75,17 +74,15 @@ export default function App() {
               <Route path="about" element={<About />} />
               <Route path="checkout" element={<Checkout />} />
               <Route path="invoice/:id" element={<Invoice />} />
-              {['login', 'register', 'seller-register', 'forgot-password', 'reset-password'].map(
-                (path) => (
-                  <Route key={path} path={path} element={<Auth key={path} />} />
-                ),
-              )}
-              <Route path="api-playground" element={<ApiPlayground />} />
+              {['login', 'register'].map((path) => (
+                <Route key={path} path={path} element={<Auth key={path} />} />
+              ))}
+
               <Route path="*" element={<NotFound />} />
             </Route>
             <Route path="dashboard/:role" element={<DashboardLayout />}>
-              <Route index element={<Dashboard />} />
-              <Route path=":section" element={<Dashboard />} />
+              <Route index element={<Dashboard key={location.pathname} />} />
+              <Route path=":section" element={<Dashboard key={location.pathname} />} />
             </Route>
           </Routes>
         </Suspense>

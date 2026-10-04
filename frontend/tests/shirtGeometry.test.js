@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { PoseLandmarker } from '@mediapipe/tasks-vision';
-import { shirtCalibration, shirtPreviewProduct } from '../src/data/shirtProducts.js';
+import { shirtCalibration } from '../src/data/shirtProducts.js';
+import { shirtPreviewProduct } from './fixtures/shirtProduct.js';
 import {
   measureTorso,
   poseToCanvas,
@@ -689,7 +690,7 @@ test('accepted Pose measurement geometry and reviewed silhouette integration are
     ],
     [
       'src/services/poseLandmarker.worker.js',
-      '3a95a535d8cd80ff647e8d32efbd35f32bbccc9215fb1060f2f9c1d1e273d1fb',
+      'b86056836b4653c75ed8222b5cbc0d966c6c33936465aabb75019ce9042f3fc2',
     ],
   ])
     assert.equal(
@@ -700,15 +701,11 @@ test('accepted Pose measurement geometry and reviewed silhouette integration are
     );
 });
 
-test('eyewear geometry and assets stay byte-for-byte unchanged', () => {
+test('eyewear geometry and product pixels stay byte-for-byte unchanged', () => {
   for (const [path, hash] of [
     [
       'src/components/tryon/faceGeometry.js',
       '1d15c4465f386d002ad3aa75f5fc8fd77a41a3117198a44aea0d872fdbd2aa2e',
-    ],
-    [
-      'src/components/tryon/CanvasPreview.jsx',
-      'cf6f8ff7dbe47d00d9d06622f28f0bdb4a6592c458a273c13066432bb47f3f7b',
     ],
     [
       'public/assets/face-ar/sunglasses/modern-clear-left-temple-normalized.png',

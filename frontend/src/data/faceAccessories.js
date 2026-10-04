@@ -62,79 +62,21 @@ export const accessoryStyles = [
 ];
 
 export function sunglassesAssetFor(product, style) {
-  const selected = product?.accessoryStyle === style.id;
-  const override = selected ? product.tryOnAsset || {} : {};
-  // Older local catalogs stored the default fallback as tryOnImageUrl. That
-  // inherited URL must not mask a newly configured real photograph in style.src.
-  const legacy =
-    selected &&
-    product.tryOnImageUrl !== style.legacySrc &&
-    product.tryOnImageUrl !== style.fallbackSrc &&
-    product.tryOnImageUrl !== style.overlayAsset
-      ? product.tryOnImageUrl
-      : null;
+  const layered = product?.imageUrl === '/assets/face-ar/sunglasses/modern-clear-front-clean.png';
   return {
-    // This assembled product must never inherit a stale flat/cartoon override.
-    src: style.frontFrameSrc || override.src || legacy || style.src,
-    frontFrameSrc: style.frontFrameSrc,
-    leftTempleSrc: style.leftTempleSrc,
-    rightTempleSrc: style.rightTempleSrc,
-    fallbackSrc: style.fallbackSrc,
+    src: product?.imageUrl,
+    frontFrameSrc: product?.imageUrl,
+    leftTempleSrc: layered ? style.leftTempleSrc : null,
+    rightTempleSrc: layered ? style.rightTempleSrc : null,
+    fallbackSrc: null,
     fit: {
       bridgePivot: style.bridgePivot,
       hinges: style.hinges,
-      widthMultiplier: override.widthMultiplier ?? style.widthMultiplier,
-      verticalOffset: override.verticalOffset ?? style.verticalOffset,
-      rotationOffset: override.rotationOffset ?? style.rotationOffset,
-      opacity: override.opacity ?? style.opacity,
+      widthMultiplier: style.widthMultiplier,
+      verticalOffset: style.verticalOffset,
+      rotationOffset: style.rotationOffset,
+      opacity: style.opacity,
     },
   };
 }
-
-export function configureFaceProduct(product) {
-  const kind = { 5: 'sunglasses', 8: 'earrings', 9: 'forehead' }[product.categoryId];
-  if (!kind) return product;
-  const defaultStyle =
-    product.categoryId === 8
-      ? product.id === 10
-        ? 'pearl'
-        : 'gold'
-      : product.categoryId === 5
-        ? product.id === 9
-          ? 'square'
-          : 'aviator'
-        : 'tikka';
-  const style =
-    accessoryStyles.find((s) => s.id === product.accessoryStyle) ||
-    accessoryStyles.find((s) => s.id === defaultStyle);
-  return {
-    ...product,
-    category: { sunglasses: 'Sunglasses', earrings: 'Earrings', forehead: 'Head Jewelry' }[kind],
-    tryOnType: 'FACE_AR',
-    accessoryKind: kind,
-    accessoryStyle: style.id,
-    ...(kind === 'sunglasses' && style.src ? { imageUrl: style.src } : {}),
-    tryOnImageUrl: product.tryOnImageUrl || style.overlayAsset,
-    overlayAsset: style.overlayAsset,
-  };
-}
-
-export const supportsFaceAR = (product) =>
-  Boolean(product?.tryOnType === 'FACE_AR' && product?.overlayAsset);
-
-// Retain saved carts/edits while upgrading the previous demo catalog in place.
-export function migrateFaceCatalog(state, seed) {
-  return {
-    ...state,
-    products: [
-      ...state.products.map(configureFaceProduct),
-      ...seed.products.filter((p) => p.phaseOne && !state.products.some((old) => old.id === p.id)),
-    ],
-    categories: [
-      ...state.categories,
-      ...seed.categories.filter(
-        (c) => c.id === 9 && !state.categories.some((old) => old.id === c.id),
-      ),
-    ],
-  };
-}
+export const supportsFaceAR = (product) => product?.engine === 'sunglasses';

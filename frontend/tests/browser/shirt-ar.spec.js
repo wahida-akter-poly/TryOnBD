@@ -346,7 +346,8 @@ test('working shirt PNG follows torso pixels and captures/downloads the exact co
       .toBeCloseTo(-(options.roll || 0), 3);
     const coverage = await page.evaluate(async () => {
       const { shirtBodyPoint } = await import('/src/components/tryon/shirtWarp.js');
-      const { shirtCalibration, shirtPreviewProduct } = await import('/src/data/shirtProducts.js');
+      const {shirtCalibration}=await import('/src/data/shirtProducts.js');
+      const {shirtPreviewProduct}=await import('/tests/fixtures/shirtProduct.js');
       const canvas = document.querySelector('canvas[aria-label="T-shirt try-on canvas"]');
       const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
       const g = window.__tryOnShirtDebug.geometry,

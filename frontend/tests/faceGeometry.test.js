@@ -24,12 +24,7 @@ import {
   resolveHeadPose,
   headPoseConfig,
 } from '../src/components/tryon/headPose.js';
-import {
-  configureFaceProduct,
-  migrateFaceCatalog,
-  sunglassesAssetFor,
-  accessoryStyles,
-} from '../src/data/faceAccessories.js';
+import { sunglassesAssetFor, accessoryStyles } from '../src/data/faceAccessories.js';
 import { alphaBounds } from '../src/components/tryon/accessoryAssets.js';
 import {
   smoothHeadSides,
@@ -37,7 +32,7 @@ import {
   templeQuad,
   hingeToHeadPaths,
 } from '../src/components/tryon/templeGeometry.js';
-import { pickPayload } from '../src/services/contracts.js';
+import { normalizeProduct } from '../src/services/catalog.js';
 import {
   measureTempleAlpha,
   templeImagePlacement,
@@ -97,22 +92,15 @@ test('mirroring retains left/right ordering and reverses tilt without flipping g
   assert.equal(faceAnchors(null, 800, 600, 'sunglasses'), null);
   assert.equal(faceAnchors(face(), 800, 600, 'earrings').length, 2);
 });
-test('catalog migration preserves user records and makes only eligible products FACE_AR', () => {
-  assert.equal(configureFaceProduct({ id: 2, categoryId: 5 }).tryOnType, 'FACE_AR');
+test('face products opt in through backend AR metadata', () => {
   assert.equal(
-    configureFaceProduct({ id: 3, categoryId: 7, tryOnType: 'JEWELRY' }).tryOnType,
-    'JEWELRY',
+    normalizeProduct({ id: 3, categoryId: 999, arType: 'EYEWEAR', price: 0 }).tryOnType,
+    'FACE_AR',
   );
-  const existing = {
-    products: [{ id: 2, name: 'Custom name', categoryId: 5 }],
-    categories: [],
-    cart: [{ productId: 2 }],
-  };
-  const seed = { products: [{ id: 13, phaseOne: true }], categories: [{ id: 9 }] };
-  const result = migrateFaceCatalog(existing, seed);
-  assert.equal(result.products[0].name, 'Custom name');
-  assert.deepEqual(result.cart, existing.cart);
-  assert.equal(migrateFaceCatalog(result, seed).products.length, 2);
+  assert.equal(
+    normalizeProduct({ id: 3, categoryId: 5, arType: 'NECKLACE', price: 0 }).tryOnType,
+    'NECKLACE',
+  );
 });
 
 test('smoothing dampens jitter, converges, and takes the shortest rotation arc', () => {
@@ -141,12 +129,6 @@ test('lost-face grace expires and mirroring works in a non-square canvas', () =>
   assert.ok(Math.abs(a.y - b.y) < 1e-8);
   assert.ok(Math.abs(a.angle + b.angle) < 1e-8);
   assert.ok(Math.abs(a.width - b.width) < 1e-8);
-});
-
-test('product-specific assets remain frontend-only catalog configuration', () => {
-  const product = configureFaceProduct({ id: 2, categoryId: 5, tryOnImageUrl: '/custom.svg' });
-  assert.equal(product.tryOnImageUrl, '/custom.svg');
-  assert.equal(pickPayload('products', 'create', product).tryOnImageUrl, undefined);
 });
 
 function faceAtSize(scale) {
@@ -247,39 +229,19 @@ test('renderer crops once-measured bounds and scales both axes equally with high
   assert.equal(ctx.globalAlpha, 1);
 });
 
-test('real asset configuration replaces inherited fallback URLs and keeps product overrides local', () => {
-  const style = { ...accessoryStyles[0], src: '/assets/face-ar/sunglasses/aviator.webp' };
-  const product = { accessoryStyle: 'aviator', tryOnImageUrl: '/assets/overlay-glasses.svg' };
-  assert.equal(sunglassesAssetFor(product, style).src, style.src);
-  product.tryOnAsset = {
-    src: '/custom.png',
-    widthMultiplier: 1.1,
-    verticalOffset: 0.02,
-    rotationOffset: 2,
-    opacity: 100,
-  };
-  const configured = sunglassesAssetFor(product, style);
-  assert.equal(configured.src, '/custom.png');
-  assert.equal(configured.fit.widthMultiplier, 1.1);
-  assert.equal(pickPayload('products', 'create', product).tryOnAsset, undefined);
+test('AR assets respect backend image URL without substituted photographs', () => {
+  const style = accessoryStyles[0];
+  const product = { imageUrl: '/custom-real-product.png', accessoryStyle: 'aviator' };
+  assert.equal(sunglassesAssetFor(product, style).src, product.imageUrl);
+  assert.equal(sunglassesAssetFor({}, style).src, undefined);
+  assert.equal(sunglassesAssetFor(product, style).fallbackSrc, null);
 });
-
-test('Modern Clear Frame always uses its real three-part assembly, including stale catalogs', () => {
+test('known Modern Clear asset retains calibrated three-part assembly', () => {
   const style = accessoryStyles.find((s) => s.id === 'clear');
-  const asset = sunglassesAssetFor(
-    {
-      accessoryStyle: 'clear',
-      tryOnImageUrl: '/assets/face-ar/clear.png',
-      tryOnAsset: { src: '/assets/face-ar/clear.svg' },
-    },
-    style,
-  );
+  const asset = sunglassesAssetFor({ imageUrl: style.frontFrameSrc }, style);
   assert.equal(asset.src, style.frontFrameSrc);
-  assert.match(asset.src, /modern-clear-front-clean\.png$/);
-  assert.match(asset.leftTempleSrc, /modern-clear-left-temple-normalized\.png$/);
-  assert.match(asset.rightTempleSrc, /modern-clear-right-temple-normalized\.png$/);
-  assert.equal(asset.fallbackSrc, null);
-  assert.equal(style.overlayAsset, style.frontFrameSrc);
+  assert.match(asset.leftTempleSrc, /modern-clear-left-temple-normalized/);
+  assert.match(asset.rightTempleSrc, /modern-clear-right-temple-normalized/);
 });
 
 test('yaw reverses with mirroring and temple projection responds to face direction and distance', () => {

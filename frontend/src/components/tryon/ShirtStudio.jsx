@@ -18,6 +18,9 @@ export default function ShirtStudio({
   upload,
   capture,
   download,
+  save,
+  saved,
+  saveError,
   reset,
   retry,
 }) {
@@ -100,7 +103,15 @@ export default function ShirtStudio({
           {source && status.bodyNotice && !source.composite && (
             <p role="status">{status.bodyNotice}</p>
           )}
+          {saveError && (
+            <p role="alert" className="error-text">
+              {saveError}
+            </p>
+          )}
           <div className="eyewear-primary-actions">
+            <Button disabled={!canExport} onClick={save}>
+              {saved || 'Save Try-On'}
+            </Button>
             <Button disabled={!source?.live || !canExport} onClick={capture}>
               <Camera size={18} />
               Capture

@@ -52,7 +52,8 @@ for (const scenario of cases)
       })
       .toBe('SILHOUETTE_FUSED');
     const report = await page.evaluate(async () => {
-      const { shirtCalibration, shirtPreviewProduct } = await import('/src/data/shirtProducts.js');
+      const {shirtCalibration}=await import('/src/data/shirtProducts.js');
+      const {shirtPreviewProduct}=await import('/tests/fixtures/shirtProduct.js');
       const { loadShirtAsset } = await import('/src/components/tryon/shirtAssets.js');
       const { drawShirt } = await import('/src/components/tryon/shirtWarp.js');
       const { structuredGarmentGeometry } =

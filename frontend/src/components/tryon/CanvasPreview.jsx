@@ -34,7 +34,6 @@ const CanvasPreview = forwardRef(function CanvasPreview(
   {
     source,
     overlay,
-    fallbackOverlay,
     leftTempleSrc,
     rightTempleSrc,
     fit,
@@ -98,7 +97,7 @@ const CanvasPreview = forwardRef(function CanvasPreview(
     report.current({ assetReady: false, assetError: '', assetNotice: '' });
     (leftTempleSrc && rightTempleSrc
       ? loadGlassesAssembly(overlay, leftTempleSrc, rightTempleSrc)
-      : loadAccessoryAsset(overlay, fallbackOverlay, kind === 'sunglasses')
+      : loadAccessoryAsset(overlay, null, kind === 'sunglasses')
     )
       .then((loaded) => {
         if (!current) return;
@@ -106,9 +105,7 @@ const CanvasPreview = forwardRef(function CanvasPreview(
         report.current({
           assetReady: true,
           assetNotice:
-            kind === 'sunglasses' && loaded.isFallback
-              ? `${overlay ? 'Product photo unavailable. ' : ''}Illustrated demo asset in use; add a transparent product photo for realistic sunglasses.`
-              : '',
+            kind === 'sunglasses' && loaded.isFallback ? 'Product image unavailable.' : '',
         });
         render.current();
       })
@@ -126,7 +123,7 @@ const CanvasPreview = forwardRef(function CanvasPreview(
     return () => {
       current = false;
     };
-  }, [overlay, fallbackOverlay, leftTempleSrc, rightTempleSrc, kind, retry]);
+  }, [overlay, leftTempleSrc, rightTempleSrc, kind, retry]);
   useEffect(() => {
     frozen.current = null;
     wasAuto.current = true;

@@ -33,7 +33,8 @@ test('normal real frontal photo preserves crew neck, connected shoulders, rounde
   await expect.poll(() => page.evaluate(() => !!window.__shirtNormalPose?.landmarks)).toBe(true);
   expect(await page.evaluate(() => window.__tryOnShirtDebug)).toBeUndefined();
   const measurements = await page.evaluate(async () => {
-    const { shirtCalibration, shirtPreviewProduct } = await import('/src/data/shirtProducts.js');
+    const {shirtCalibration}=await import('/src/data/shirtProducts.js');
+      const {shirtPreviewProduct}=await import('/tests/fixtures/shirtProduct.js');
     const { measureTorso, updateShirtTracking } =
       await import('/src/components/tryon/shirtGeometry.js');
     const { loadShirtAsset } = await import('/src/components/tryon/shirtAssets.js');

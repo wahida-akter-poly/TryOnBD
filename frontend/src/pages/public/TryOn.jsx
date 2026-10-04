@@ -1,47 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import {
-  Camera,
-  Upload,
-  ScanLine,
-  RotateCcw,
-  Download,
-  Glasses,
-  Gem,
-  ShoppingBag,
-  Save,
-} from 'lucide-react';
+import { Camera, Upload, ScanLine, Download, ShoppingBag, Save } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { Badge, Button, Select, Tabs } from '../../components/common/UI';
+import { Button } from '../../components/common/UI';
 import CanvasPreview, { loadImage } from '../../components/tryon/CanvasPreview';
 import { defaultControls } from '../../components/tryon/faceGeometry';
 import { accessoryStyles, sunglassesAssetFor } from '../../data/faceAccessories';
 import { useTryOnCamera } from '../../hooks/useTryOnCamera';
-import { tryOnService } from '../../services/tryOnService';
+import { services } from '../../services';
+import { normalizeProduct } from '../../services/catalog';
+import { LoadingState, ErrorState, EmptyState } from '../../components/common/UI';
 import { errorMessage } from '../../services/api';
 import ShirtOverlay from '../../components/tryon/ShirtOverlay.jsx';
 import ShirtStudio from '../../components/tryon/ShirtStudio.jsx';
-import { shirtCalibration, shirtPreviewProduct } from '../../data/shirtProducts.js';
+import { shirtCalibration } from '../../data/shirtProducts.js';
 import NecklaceOverlay from '../../components/tryon/NecklaceOverlay.jsx';
-
-const necklacePreviewProduct = {
-  id: 'necklace-preview',
-  testId: 1,
-  name: 'Zariya Bridal Necklace',
-  price: 3290,
-  categoryId: 7,
-  sellerId: 3,
-  stockQuantity: 9,
-  rating: 4.9,
-  imageUrl: '/assets/necklace.jpg',
-  asset: 'necklace',
-  arType: 'NECKLACE',
-  tryOnType: 'NECKLACE',
-  badge: 'Preview',
-  color: '#eee9e0',
-  sync: 'Demo',
-  description: 'A local necklace preview for the browser-only virtual try-on demo.',
-};
 
 const blobFrom = (canvas) =>
   new Promise((resolve, reject) =>
@@ -51,68 +24,107 @@ const blobFrom = (canvas) =>
       'image/png',
     ),
   );
-async function thumbnail(canvas) {
-  const small = document.createElement('canvas');
-  const ratio = Math.min(1, 480 / Math.max(canvas.width, canvas.height));
-  small.width = Math.round(canvas.width * ratio);
-  small.height = Math.round(canvas.height * ratio);
-  small.getContext('2d').drawImage(canvas, 0, 0, small.width, small.height);
-  return blobFrom(small);
-}
-const modeFor = (product) =>
-  product?.accessoryKind === 'sunglasses' || product?.tryOnType === 'SUNGLASSES'
-    ? 'sunglasses'
-    : product?.arType === 'NECKLACE' || product?.tryOnType === 'NECKLACE'
-      ? 'necklace'
-      : product?.arType === 'tshirt' || product?.tryOnType === 'CLOTHING'
-      ? 'clothing'
-      : 'jewelry';
+const modeFor = (product) => product?.engine;
 const controlsFor = (mode, shirt = false) => ({
   ...defaultControls(),
   auto: mode === 'sunglasses' || mode === 'necklace' || shirt,
 });
 
 export default function TryOn() {
-  const { state, user, addToCart, localUpdate, registerMedia, toast } = useApp();
+  const [params] = useSearchParams();
+  const requested = params.get('productId');
+  const { state, catalogLoading, catalogError, refreshCatalog } = useApp();
+  const [product, setProduct] = useState(null),
+    [error, setError] = useState(''),
+    [retry, setRetry] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setProduct(null);
+    setError('');
+    if (!requested) return;
+    if (!/^[1-9]\d*$/.test(requested)) {
+      setError('Choose a valid product from the collection.');
+      return;
+    }
+    services.products
+      .get(requested)
+      .then(({ data }) => {
+        if (active) setProduct(normalizeProduct(data));
+      })
+      .catch((e) => {
+        if (active) setError(errorMessage(e));
+      });
+    return () => {
+      active = false;
+    };
+  }, [requested, retry]);
+  if (requested && error)
+    return (
+      <div className="container page">
+        <ErrorState message={error} retry={() => setRetry((n) => n + 1)} />
+      </div>
+    );
+  if (requested && (!product || String(product.id) !== requested)) return <LoadingState />;
+  if (product && !product.engine)
+    return (
+      <div className="container page">
+        <EmptyState title="Virtual try-on is unavailable for this product" />
+      </div>
+    );
+  if (product && !product.imageUrl)
+    return (
+      <div className="container page">
+        <EmptyState
+          title="No product image uploaded"
+          text="This product needs an image before virtual try-on is available."
+        />
+      </div>
+    );
+  if (!requested)
+    return (
+      <div className="container page">
+        <h1>Choose your next look</h1>
+        <p>Select a product to begin virtual try-on. Then start your camera or upload a photo.</p>
+        {catalogLoading ? (
+          <LoadingState />
+        ) : catalogError ? (
+          <ErrorState message={catalogError} retry={refreshCatalog} />
+        ) : state.products.some((p) => p.engine) ? (
+          <div className="product-grid">
+            {state.products
+              .filter((p) => p.engine)
+              .map((p) => (
+                <Link className="panel" key={p.id} to={`/try-on?productId=${p.id}`}>
+                  {p.name}
+                </Link>
+              ))}
+          </div>
+        ) : (
+          <EmptyState title="No try-on products yet" />
+        )}
+      </div>
+    );
+  return <TryOnStudio key={product.id} product={product} />;
+}
+function TryOnStudio({ product }) {
+  const { state, identity, refreshAccount, addToCart, registerMedia, toast } = useApp();
   const [params, setParams] = useSearchParams();
-  const arDebug = params.get('arDebug') === '1';
+  const arDebug = false;
   const [adjustFit, setAdjustFit] = useState(false);
-  const products = [
-    ...state.products.filter(
-      (p) =>
-        p.arType === 'tshirt' ||
-        ['FACE_AR', 'SUNGLASSES', 'CLOTHING', 'JEWELRY', 'NECKLACE'].includes(p.tryOnType) ||
-        p.arType === 'NECKLACE',
-    ),
-    shirtPreviewProduct,
-    necklacePreviewProduct,
-  ];
-  const requested = params.get('productId') || params.get('product');
-  const product =
-    products.find((p) => String(p.id) === requested) ||
-    products.find((p) => modeFor(p) === 'sunglasses') ||
-    products[0];
+  const products = state.products.filter((p) => p.engine);
   const mode = modeFor(product),
     isAR = mode === 'sunglasses';
   const isNecklace = mode === 'necklace';
-  const isShirt = product?.arType === 'tshirt';
+  const isShirt = product?.engine === 'clothing';
   const shirtFit = useMemo(() => (isShirt ? shirtCalibration(product) : null), [product, isShirt]);
   const [styleId, setStyleId] = useState(product?.accessoryStyle || 'aviator');
   const style = isShirt
     ? { id: 'tshirt', kind: 'tshirt', overlayAsset: shirtFit.asset }
     : isNecklace
-      ? { id: 'necklace', kind: 'necklace', overlayAsset: '/assets/overlay-necklace.svg' }
-    : mode === 'clothing'
-      ? { id: 'clothing', kind: 'clothing', overlayAsset: '/assets/overlay-clothing.svg' }
-      : mode === 'jewelry' && !product?.accessoryKind
-        ? { id: 'necklace', kind: 'necklace', overlayAsset: '/assets/overlay-necklace.svg' }
-        : accessoryStyles.find((s) => s.id === styleId) || accessoryStyles[0];
+      ? { id: 'necklace', kind: 'necklace', overlayAsset: product.imageUrl }
+      : accessoryStyles.find((s) => s.id === product.accessoryStyle) || accessoryStyles[0];
   const glassesAsset = isAR ? sunglassesAssetFor(product, style) : null;
-  const overlay = isAR
-    ? glassesAsset.src
-    : style.id === product?.accessoryStyle
-      ? product.tryOnImageUrl || style.overlayAsset
-      : style.overlayAsset;
+  const overlay = product.imageUrl;
   const [source, setSource] = useState(null);
   const [inputMode, setInputMode] = useState('camera');
   const [controls, setControls] = useState(() => controlsFor(mode, isShirt));
@@ -129,7 +141,6 @@ export default function TryOn() {
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [saved, setSaved] = useState('');
-  const [pendingLocal, setPendingLocal] = useState(null);
   const preview = useRef(null),
     video = useRef(null),
     uploadAttempt = useRef(0),
@@ -145,7 +156,6 @@ export default function TryOn() {
   const changeSource = useCallback((next) => {
     setSource(next);
     setSaved('');
-    setPendingLocal(null);
     setSaveError('');
     setStatus((old) => ({
       ...old,
@@ -193,7 +203,6 @@ export default function TryOn() {
   }, [product?.id, styleId]);
   useEffect(() => {
     setSaved('');
-    setPendingLocal(null);
     setSaveError('');
   }, [controls, styleId, product?.id]);
 
@@ -286,76 +295,29 @@ export default function TryOn() {
       toast(e.message, 'error');
     }
   }
-  function storeSession(prepared, validated) {
-    const record = {
-      ...prepared.metadata,
-      inputImageUrl: registerMedia(prepared.original),
-      resultImageUrl: registerMedia(prepared.result),
-      sync: validated ? 'Controller validated' : 'Local / Unsynced',
-      persistence: 'Demo / Local',
-      requestValidated: validated,
-    };
-    localUpdate('sessions', record, 'create');
-    const message =
-      isAR && !arDebug
-        ? validated
-          ? 'Try-on saved'
-          : 'Saved on this device'
-        : validated
-          ? 'Spring Boot request validated'
-          : 'Saved as Local Demo / Unsynced';
-    setSaved(message);
-    setPendingLocal(null);
-    setSaveError('');
-    toast(message, validated ? 'success' : 'info');
-  }
   async function save() {
-    if (!product || !canExport || busy) return;
-    const snapshot = preview.current?.snapshot();
-    if (!snapshot) return;
+    if (!identity) {
+      toast('Sign in to save your try-on session.', 'error');
+      return;
+    }
+    if (!canExport || busy) return;
     setBusy(true);
     setSaveError('');
-    setPendingLocal(null);
     try {
-      const prepared = {
-        original: await thumbnail(snapshot.original),
-        result: await thumbnail(snapshot.result),
-        metadata: {
-          id: `DEMO-LOCAL-${crypto.randomUUID()}`,
-          date: new Date().toISOString(),
-          userId: user.id,
-          productId: product.id,
-          tryOnType: isAR ? 'FACE_AR' : mode.toUpperCase(),
-          accessoryStyle: style.id,
-          controls: { ...controls },
-          sourceKind: source.kind,
-          testId: 1,
-        },
-      };
-      try {
-        // An honest local reference: this API validates text; it does not upload or host photos.
-        await tryOnService.create({
-          userId: Number(user.testId) || 1,
-          productId: Number(product.testId) || 1,
-          inputImageUrl: `urn:tryonbd:local-input:${crypto.randomUUID()}`,
-          tryOnType: isAR ? 'FACE_AR' : mode.toUpperCase(),
-        });
-        if (mounted.current) storeSession(prepared, true);
-      } catch (e) {
-        if (!mounted.current) return;
-        if (e.backendOffline) {
-          setSaveError(
-            isAR && !arDebug
-              ? 'Saving is unavailable right now. You can keep this try-on on this device.'
-              : 'Backend offline. You can retry or explicitly save this snapshot as a Local Demo.',
-          );
-          setPendingLocal(prepared);
-        } else setSaveError(errorMessage(e));
-      }
+      const snapshot = preview.current?.snapshot();
+      if (!snapshot) throw new Error('Capture a try-on first.');
+      await services.sessions.create({
+        productId: product.id,
+        inputImageUrl: `urn:tryonbd:capture:${source.kind}:${snapshot.result.width}x${snapshot.result.height}`,
+        tryOnType: product.arType,
+      });
+      await refreshAccount();
+      setSaved('Try-on session saved');
+      toast('Try-on session saved');
     } catch (e) {
-      if (mounted.current) setSaveError(e.message);
+      setSaveError(errorMessage(e));
     } finally {
-      if (mounted.current) setBusy(false);
+      setBusy(false);
     }
   }
   const canExport = Boolean(
@@ -450,6 +412,9 @@ export default function TryOn() {
         upload={upload}
         capture={capture}
         download={download}
+        save={save}
+        saved={saved}
+        saveError={saveError}
         reset={() => setRetry((n) => n + 1)}
         retry={() => setRetry((n) => n + 1)}
       />
@@ -573,15 +538,12 @@ export default function TryOn() {
                 {saveError}
               </p>
             )}
-            {pendingLocal && (
-              <Button variant="ghost" onClick={() => storeSession(pendingLocal, false)}>
-                Save on this device
-              </Button>
-            )}
             {saved && (
               <p role="status">
                 Try-on saved.{' '}
-                <Link to="/dashboard/customer/try-on-history">View saved try-ons</Link>
+                {identity?.role === 'customer' && (
+                  <Link to="/dashboard/customer/try-on-history">View saved try-ons</Link>
+                )}
               </p>
             )}
             <p className="eyewear-privacy">Your camera and photos stay in your browser.</p>
@@ -591,7 +553,6 @@ export default function TryOn() {
     );
   }
   if (isAR && !arDebug) {
-    const frames = accessoryStyles.filter((s) => s.kind === 'sunglasses' && s.src);
     const trackingLabel = source?.composite
       ? 'Captured'
       : loadingPhoto
@@ -680,35 +641,19 @@ export default function TryOn() {
                 Retry image
               </Button>
             )}
-            <section className="eyewear-frames" aria-label="Frames">
-              <h2>Try another frame</h2>
-              <div className="face-style-grid" aria-label="Accessory styles">
-                {frames.map((s) => (
-                  <button
-                    key={s.id}
-                    aria-pressed={style.id === s.id}
-                    onClick={() => {
-                      const nextProduct = products.find((p) => p.accessoryStyle === s.id);
-                      if (nextProduct && nextProduct.id !== product.id)
-                        chooseProduct(nextProduct.id);
-                      setStyleId(s.id);
-                    }}
-                  >
-                    <img
-                      src={s.src}
-                      alt=""
-                      onError={(event) => {
-                        event.currentTarget.hidden = true;
-                      }}
-                    />
-                    <span>{s.name}</span>
-                  </button>
-                ))}
-              </div>
-              {frames.length === 1 && (
-                <p className="text-sm">Classic Aviator is currently the only available frame.</p>
-              )}
-            </section>
+            {products.filter((p) => p.engine === 'sunglasses' && p.id !== product.id).length >
+              0 && (
+              <section className="eyewear-frames" aria-label="Other eyewear">
+                <h2>Explore more frames</h2>
+                {products
+                  .filter((p) => p.engine === 'sunglasses' && p.id !== product.id)
+                  .map((p) => (
+                    <Link className="btn btn-ghost" key={p.id} to={`/try-on?productId=${p.id}`}>
+                      {p.name}
+                    </Link>
+                  ))}
+              </section>
+            )}
             <div className="eyewear-primary-actions">
               <Button disabled={!source?.live || !canExport} onClick={capture}>
                 <Camera size={18} />
@@ -740,15 +685,12 @@ export default function TryOn() {
                 {saveError}
               </p>
             )}
-            {pendingLocal && (
-              <Button variant="ghost" onClick={() => storeSession(pendingLocal, false)}>
-                Save on this device
-              </Button>
-            )}
             {saved && (
               <p role="status">
                 Try-on saved.{' '}
-                <Link to="/dashboard/customer/try-on-history">View saved try-ons</Link>
+                {identity?.role === 'customer' && (
+                  <Link to="/dashboard/customer/try-on-history">View saved try-ons</Link>
+                )}
               </p>
             )}
             <button
@@ -795,395 +737,5 @@ export default function TryOn() {
       </div>
     );
   }
-  return (
-    <div className="studio-page face-studio">
-      <div className="container">
-        <header className="studio-heading">
-          <div>
-            <span className="eyebrow">
-              <span className="live-dot" />
-              YOUR PERSONAL STYLE STUDIO
-            </span>
-            <h1>
-              A new look. <em>All you.</em>
-            </h1>
-            <p>
-              {isAR
-                ? 'Sunglasses that follow your face in real time.'
-                : isNecklace
-                  ? 'A necklace preview that follows your shoulders.'
-                  : 'Adjust a manual overlay on your camera or photo.'}
-            </p>
-          </div>
-          <Badge tone="dark">
-            {isAR || isNecklace ? 'LIVE AR TRY-ON' : 'MANUAL DEMO OVERLAY'}
-          </Badge>
-        </header>
-        <div className="face-mode-bar">
-          <Tabs
-            label="Try-on mode"
-            tabs={[
-              { value: 'sunglasses', label: 'Sunglasses' },
-              { value: 'necklace', label: 'Necklace' },
-              { value: 'clothing', label: 'Clothing' },
-              { value: 'jewelry', label: 'Jewelry' },
-            ]}
-            value={mode}
-            onChange={chooseMode}
-          />
-          <span className="text-sm">
-            {isAR || isNecklace
-              ? 'Powered by real-time face landmarks'
-              : 'Prototype / Demo Processing · No AI model'}
-          </span>
-        </div>
-        <fieldset disabled={busy} className="studio-grid face-fieldset">
-          <aside className="studio-panel">
-            <h2>
-              01 <span>The piece</span>
-            </h2>
-            <Select
-              label="Selected product"
-              value={product?.id || ''}
-              onChange={(e) => chooseProduct(e.target.value)}
-            >
-              {products
-                .filter((p) => modeFor(p) === mode)
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-            </Select>
-            {requested && !products.some((p) => String(p.id) === requested) && (
-              <p className="text-sm mt-3">
-                That product is unavailable. Choose another product to preview.
-              </p>
-            )}
-            <div className="face-style-grid" aria-label="Accessory styles">
-              {accessoryStyles
-                .filter((s) => s.kind === product?.accessoryKind)
-                .map((s) => (
-                  <button
-                    key={s.id}
-                    aria-pressed={style.id === s.id}
-                    disabled={s.kind === 'sunglasses' && !s.src}
-                    onClick={() => setStyleId(s.id)}
-                  >
-                    {(s.kind !== 'sunglasses' || s.src) && (
-                      <img
-                        src={s.overlayAsset}
-                        alt=""
-                        onError={(event) => {
-                          if (s.kind === 'sunglasses') {
-                            event.currentTarget.hidden = true;
-                            return;
-                          }
-                          if (
-                            s.fallbackSrc &&
-                            event.currentTarget.getAttribute('src') !== s.fallbackSrc
-                          )
-                            event.currentTarget.src = s.fallbackSrc;
-                        }}
-                      />
-                    )}
-                    <span>{s.name}</span>
-                    {s.kind === 'sunglasses' && !s.src && (
-                      <small>Real product photo required</small>
-                    )}
-                  </button>
-                ))}
-            </div>
-            <h2 className="mt-7">
-              02 <span>Your input</span>
-            </h2>
-            <Tabs
-              label="Input source"
-              tabs={[
-                { value: 'camera', label: 'Live Camera' },
-                { value: 'upload', label: 'Upload Photo' },
-              ]}
-              value={inputMode}
-              onChange={switchInput}
-            />
-            {inputMode === 'upload' ? (
-              <label className="upload-zone mt-4">
-                <Upload size={24} />
-                <strong>Choose your photo</strong>
-                <small>PNG, JPG, JPEG, WebP · up to 12 MB</small>
-                <input
-                  aria-label="Upload photo"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={upload}
-                />
-              </label>
-            ) : (
-              <div className="face-camera-actions">
-                <p role="status">{camera.status}</p>
-                <Button
-                  variant="studio"
-                  busy={cameraBusy}
-                  onClick={() => {
-                    setInputError('');
-                    camera.start();
-                  }}
-                  disabled={camera.status === 'Camera Active'}
-                >
-                  <Camera size={16} />
-                  {source?.kind === 'snapshot'
-                    ? 'Retake with camera'
-                    : isAR || isNecklace
-                      ? 'Start AR Camera'
-                      : 'Start camera'}
-                </Button>
-                {(camera.status === 'Camera Active' || cameraBusy) && (
-                  <Button
-                    variant="studio"
-                    onClick={() => {
-                      camera.stop();
-                      changeSource(null);
-                    }}
-                  >
-                    Stop camera
-                  </Button>
-                )}
-                {camera.devices.length > 1 && camera.status === 'Camera Active' && (
-                  <Button variant="studio" onClick={camera.switchCamera}>
-                    Switch camera
-                  </Button>
-                )}
-                {camera.error && (
-                  <Button variant="studio" onClick={() => camera.start()}>
-                    Retry camera
-                  </Button>
-                )}
-              </div>
-            )}
-            <p className="studio-privacy">
-              Photos are processed in your browser. No face images are uploaded. Saved previews last
-              for this visit; only session metadata stays in local storage.
-            </p>
-          </aside>
-          <section className="studio-preview" aria-label="Try-on preview">
-            <div className="preview-toolbar">
-              <span role="status">
-                {isAR
-                  ? `Face Tracking: ${status.tracking}`
-                  : isNecklace
-                    ? `Pose Tracking: ${status.tracking}`
-                    : 'Manual overlay preview'}
-              </span>
-              <span>
-                {source?.kind === 'snapshot' ? 'SNAPSHOT' : source?.live ? 'LIVE' : 'PHOTO'}
-              </span>
-            </div>
-            {canvasStage}
-            <div className="preview-bottom">
-              <Tabs
-                label="Before and after"
-                tabs={[
-                  { value: 'before', label: 'Before' },
-                  { value: 'after', label: 'After' },
-                  { value: 'compare', label: 'Compare' },
-                ]}
-                value={view}
-                onChange={setView}
-              />
-              <span className="text-xs">
-                {source?.composite
-                  ? 'Captured result'
-                  : controls.auto
-                    ? 'Automatic alignment'
-                    : 'Manual placement'}
-              </span>
-            </div>
-            {view === 'compare' && (
-              <label className="range-control m-3">
-                <span>Comparison split</span>
-                <input
-                  aria-label="Comparison split"
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={compare}
-                  onChange={(e) => setCompare(Number(e.target.value))}
-                />
-              </label>
-            )}
-            {(loadingPhoto || status.tracking === 'Loading face detector') && (
-              <p className="face-feedback" role="status">
-                {loadingPhoto ? 'Opening photo…' : 'Loading AR model…'}
-              </p>
-            )}
-            {isAR && status.assetNotice && (
-              <p className="face-feedback" role="status">
-                {status.assetNotice}
-              </p>
-            )}
-            {notice && (
-              <p className="face-feedback face-error" role="alert">
-                {notice}
-              </p>
-            )}
-            {(isAR || isNecklace) && source && status.tracking === 'Lost' && (
-              <p className="face-feedback" role="status">
-                {isNecklace
-                  ? 'No shoulder pose detected. Keep both shoulders in view or upload another photo.'
-                  : 'No face detected. Please face the camera directly or upload another photo.'}
-              </p>
-            )}
-            {(isAR || isNecklace) &&
-              source &&
-              !source.composite &&
-              ['Unavailable', 'Lost'].includes(status.tracking) && (
-                <Button className="m-3" variant="studio" onClick={() => setRetry((n) => n + 1)}>
-                  Retry detection
-                </Button>
-              )}
-            <div className="face-actions">
-              <Button
-                variant="studio"
-                disabled={Boolean(source?.composite)}
-                onClick={() => {
-                  setControls(controlsFor(mode));
-                  setView('after');
-                }}
-              >
-                <RotateCcw size={16} />
-                Reset
-              </Button>
-              <Button
-                variant="studio"
-                disabled={!source?.live || !canExport || view !== 'after'}
-                onClick={capture}
-              >
-                <Camera size={16} />
-                {isAR || isNecklace ? 'Capture AR Result' : 'Capture snapshot'}
-              </Button>
-              <Button variant="studio" disabled={!canExport} onClick={download}>
-                <Download size={16} />
-                Download snapshot
-              </Button>
-            </div>
-          </section>
-          <aside className="studio-panel controls-panel">
-            <h2>
-              03 <span>{isAR || isNecklace ? 'Fine tune' : 'Make it yours'}</span>
-            </h2>
-            <fieldset disabled={Boolean(source?.composite)} className="face-fieldset">
-              {(isAR || isNecklace) && (
-                <label className="face-check">
-                  <input
-                    type="checkbox"
-                    checked={controls.auto}
-                    onChange={(e) => setControls((old) => ({ ...old, auto: e.target.checked }))}
-                  />
-                  Auto Align
-                </label>
-              )}
-              <p className="text-sm mb-5">
-                {source?.composite
-                  ? 'Result captured. Retake or upload a photo to adjust the fit.'
-                  : controls.auto
-                    ? isNecklace
-                      ? 'Follows your shoulders. Move naturally and capture when it sits well.'
-                      : 'Follows your face. Use offsets to fine-tune the fit.'
-                    : 'Manual placement. Position your accessory with the controls.'}
-              </p>
-              {style.kind === 'earrings' && (
-                <label className="face-check">
-                  <input
-                    type="checkbox"
-                    checked={controls.mirror}
-                    onChange={(e) => setControls((old) => ({ ...old, mirror: e.target.checked }))}
-                  />
-                  Mirror Adjustment
-                </label>
-              )}
-              {[
-                { key: 'x', label: 'X offset', min: -50, max: 50, step: 0.5, unit: '%' },
-                { key: 'y', label: 'Y offset', min: -50, max: 50, step: 0.5, unit: '%' },
-                { key: 'scale', label: 'Scale', min: 0.25, max: 2.5, step: 0.05, unit: '×' },
-                { key: 'rotation', label: 'Rotation', min: -180, max: 180, step: 1, unit: '°' },
-                { key: 'opacity', label: 'Opacity', min: 0, max: 100, step: 1, unit: '%' },
-              ].map((c) => (
-                <label className="range-control" key={c.key}>
-                  <span>
-                    {c.label}
-                    <b>
-                      {controls[c.key]}
-                      {c.unit}
-                    </b>
-                  </span>
-                  <input
-                    aria-label={c.label}
-                    type="range"
-                    min={c.min}
-                    max={c.max}
-                    step={c.step}
-                    value={controls[c.key]}
-                    onChange={(e) =>
-                      setControls((old) => ({ ...old, [c.key]: Number(e.target.value) }))
-                    }
-                  />
-                </label>
-              ))}
-            </fieldset>
-            <Button
-              className="studio-start w-full"
-              busy={busy}
-              disabled={!canExport || Boolean(saved)}
-              onClick={save}
-            >
-              <Save size={16} />
-              {saved ? 'Try-On saved' : 'Save Try-On'}
-            </Button>
-            {saveError && (
-              <p className="face-feedback face-error" role="alert">
-                {saveError}
-              </p>
-            )}
-            {pendingLocal && (
-              <Button
-                className="w-full mt-3"
-                variant="studio"
-                onClick={() => storeSession(pendingLocal, false)}
-              >
-                Save as Local Demo
-              </Button>
-            )}
-            {saved && (
-              <p className="face-feedback" role="status">
-                {saved}. Demo / Local session; no database persistence.
-              </p>
-            )}
-            <Button
-              className="w-full mt-3"
-              variant="studio"
-              disabled={!product?.stockQuantity}
-              onClick={() => addToCart(product)}
-            >
-              <ShoppingBag size={16} />
-              Add product to cart
-            </Button>
-            <Link className="demo-photo-link" to="/dashboard/customer/try-on-history">
-              View your demo history →
-            </Link>
-            <p className="studio-privacy">
-              {style.kind === 'earrings'
-                ? 'Place the earrings manually. Use Mirror Adjustment for symmetrical spacing.'
-                : 'A 2D style preview, not a measurement of physical fit.'}
-            </p>
-          </aside>
-        </fieldset>
-        <p className="face-footnote">
-          {isAR ? <Glasses size={16} /> : <Gem size={16} />}{' '}
-          {isAR
-            ? 'One face at a time · Face forward in good light · A visual preview, not a measurement of physical fit'
-            : 'Manual prototype · Automatic shirt and jewelry fitting are not implemented'}
-        </p>
-      </div>
-    </div>
-  );
+  return <EmptyState title="Virtual try-on is unavailable" />;
 }
