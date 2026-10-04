@@ -5,6 +5,7 @@ import { categoryService } from './categoryService';
 import { tryOnService } from './tryOnService';
 import { reviewService } from './reviewService';
 import { orderService } from './orderService';
+import { authService } from './authService';
 export const services = {
   users: userService,
   sellers: sellerService,
@@ -13,4 +14,5 @@ export const services = {
   sessions: tryOnService,
   reviews: reviewService,
   orders: orderService,
+  auth: authService,
 };

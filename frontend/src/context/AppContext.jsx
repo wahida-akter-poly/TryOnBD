@@ -4,9 +4,40 @@ import { services } from '../services';
 import { errorMessage } from '../services/api';
 import { loadState, saveState } from '../utils/storage';
 import { localId } from '../utils/format';
-import { migrateFaceCatalog } from '../data/faceAccessories';
+import { configureFaceProduct, migrateFaceCatalog } from '../data/faceAccessories';
 
 const Context = createContext(null);
+const normalizeArProduct = (product) => {
+  const arType = String(product.arType || '').toUpperCase();
+  const base = {
+    ...product,
+    price: Number(product.price || 0),
+    stockQuantity: product.stockQuantity ?? 0,
+    fullName: product.fullName || product.name,
+  };
+  if (arType === 'SHIRT' || arType === 'TSHIRT' || arType === 'CLOTHING') {
+    return {
+      ...base,
+      arType: 'tshirt',
+      tryOnType: 'CLOTHING',
+      category: 'Clothing',
+      shirtAR: { asset: product.imageUrl || '/assets/body-ar/shirts/tshirt-black-front.png' },
+    };
+  }
+  if (arType === 'EYEWEAR' || arType === 'SUNGLASSES') {
+    const clear = /clear/i.test(product.name || '');
+    const aviator = /aviator/i.test(product.name || '');
+    return configureFaceProduct({
+      ...base,
+      categoryId: product.categoryId || 5,
+      tryOnType: 'FACE_AR',
+      accessoryKind: 'sunglasses',
+      accessoryStyle: clear ? 'clear' : aviator ? 'aviator' : 'aviator',
+    });
+  }
+  return configureFaceProduct(base);
+};
+
 export function AppProvider({ children }) {
   const [state, setState] = useState(() => migrateFaceCatalog(loadState(seed), seed));
   const [role, setRole] = useState('customer');
@@ -51,7 +82,17 @@ export function AppProvider({ children }) {
   useEffect(() => {
     const listener = (event) => setOnline(event.detail.online);
     window.addEventListener('tryonbd:api', listener);
-    services.products.list().catch(() => {});
+    Promise.all([services.products.list(), services.categories.list()])
+      .then(([productsResponse, categoriesResponse]) => {
+        const products = productsResponse.data.map(normalizeArProduct);
+        const categories = categoriesResponse.data;
+        setState((old) => ({
+          ...old,
+          products,
+          categories: categories.length ? categories : old.categories,
+        }));
+      })
+      .catch(() => {});
     return () => window.removeEventListener('tryonbd:api', listener);
   }, []);
   useEffect(() => {
@@ -154,6 +195,10 @@ export function AppProvider({ children }) {
     return { ok: true, record };
   }
   function addToCart(product, quantity = 1) {
+    if (!identity) {
+      toast('Please sign in before adding items to your cart.', 'error');
+      return false;
+    }
     const current = state.cart.find((item) => item.productId === product.id)?.quantity || 0;
     if (product.stockQuantity < current + quantity) {
       toast('This quantity is unavailable in demo stock.', 'error');

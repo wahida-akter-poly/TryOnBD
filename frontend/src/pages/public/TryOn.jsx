@@ -19,6 +19,10 @@ import { accessoryStyles, sunglassesAssetFor } from '../../data/faceAccessories'
 import { useTryOnCamera } from '../../hooks/useTryOnCamera';
 import { tryOnService } from '../../services/tryOnService';
 import { errorMessage } from '../../services/api';
+import ShirtOverlay from '../../components/tryon/ShirtOverlay.jsx';
+import ShirtStudio from '../../components/tryon/ShirtStudio.jsx';
+import { shirtCalibration, shirtPreviewProduct } from '../../data/shirtProducts.js';
+
 
 const blobFrom = (canvas) =>
   new Promise((resolve, reject) =>
@@ -39,7 +43,7 @@ async function thumbnail(canvas) {
 const modeFor = (product) =>
   product?.accessoryKind === 'sunglasses' || product?.tryOnType === 'SUNGLASSES'
     ? 'sunglasses'
-    : product?.arType === 'tshirt' || product?.tryOnType === 'CLOTHING'
+      : product?.arType === 'tshirt' || product?.tryOnType === 'CLOTHING'
       ? 'clothing'
       : 'jewelry';
 const controlsFor = (mode, shirt = false) => ({
@@ -126,7 +130,7 @@ export default function TryOn() {
   }, []);
   const camera = useTryOnCamera(video, changeSource);
   useEffect(() => {
-    if ((isAR || isShirt) && !arDebug) {
+    if ((isAR || isShirt ) && !arDebug) {
       setControls((old) => ({ ...old, auto: true }));
       setView('after');
     }
@@ -227,7 +231,7 @@ export default function TryOn() {
       camera.stop();
       changeSource({
         element: snapshot.original,
-        ...(isAR || isShirt ? { composite: snapshot.result } : {}),
+        ...(isAR || isShirt  ? { composite: snapshot.result } : {}),
         mediaUrl: registerMedia(blob),
         live: false,
         mirrored: false,
@@ -636,10 +640,12 @@ export default function TryOn() {
             <p>
               {isAR
                 ? 'Sunglasses that follow your face in real time.'
-                : 'Adjust a manual overlay on your camera or photo.'}
+                  : 'Adjust a manual overlay on your camera or photo.'}
             </p>
           </div>
-          <Badge tone="dark">{isAR ? 'LIVE AR TRY-ON' : 'MANUAL DEMO OVERLAY'}</Badge>
+          <Badge tone="dark">
+            {isAR  ? 'LIVE AR TRY-ON' : 'MANUAL DEMO OVERLAY'}
+          </Badge>
         </header>
         <div className="face-mode-bar">
           <Tabs
@@ -653,7 +659,7 @@ export default function TryOn() {
             onChange={chooseMode}
           />
           <span className="text-sm">
-            {isAR
+            {isAR 
               ? 'Powered by real-time face landmarks'
               : 'Prototype / Demo Processing · No AI model'}
           </span>
@@ -754,7 +760,7 @@ export default function TryOn() {
                   <Camera size={16} />
                   {source?.kind === 'snapshot'
                     ? 'Retake with camera'
-                    : isAR
+                    : isAR 
                       ? 'Start AR Camera'
                       : 'Start camera'}
                 </Button>
@@ -789,7 +795,9 @@ export default function TryOn() {
           <section className="studio-preview" aria-label="Try-on preview">
             <div className="preview-toolbar">
               <span role="status">
-                {isAR ? `Face Tracking: ${status.tracking}` : 'Manual overlay preview'}
+                {isAR
+                  ? `Face Tracking: ${status.tracking}`
+                    : 'Manual overlay preview'}
               </span>
               <span>
                 {source?.kind === 'snapshot' ? 'SNAPSHOT' : source?.live ? 'LIVE' : 'PHOTO'}
@@ -843,12 +851,12 @@ export default function TryOn() {
                 {notice}
               </p>
             )}
-            {isAR && source && status.tracking === 'Lost' && (
+            {(isAR ) && source && status.tracking === 'Lost' && (
               <p className="face-feedback" role="status">
                 No face detected. Please face the camera directly or upload another photo.
               </p>
             )}
-            {isAR &&
+            {(isAR ) &&
               source &&
               !source.composite &&
               ['Unavailable', 'Lost'].includes(status.tracking) && (
@@ -874,7 +882,7 @@ export default function TryOn() {
                 onClick={capture}
               >
                 <Camera size={16} />
-                {isAR ? 'Capture AR Result' : 'Capture snapshot'}
+                {isAR  ? 'Capture AR Result' : 'Capture snapshot'}
               </Button>
               <Button variant="studio" disabled={!canExport} onClick={download}>
                 <Download size={16} />
@@ -884,10 +892,10 @@ export default function TryOn() {
           </section>
           <aside className="studio-panel controls-panel">
             <h2>
-              03 <span>{isAR ? 'Fine tune' : 'Make it yours'}</span>
+              03 <span>{isAR  ? 'Fine tune' : 'Make it yours'}</span>
             </h2>
             <fieldset disabled={Boolean(source?.composite)} className="face-fieldset">
-              {isAR && (
+              {(isAR ) && (
                 <label className="face-check">
                   <input
                     type="checkbox"
