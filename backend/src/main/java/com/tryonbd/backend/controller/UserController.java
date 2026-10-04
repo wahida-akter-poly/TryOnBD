@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.*;
 public class UserController {
     private final PersistenceService service;
     public UserController(PersistenceService service) { this.service = service; }
+    @PutMapping("/{id}/role")
+    public com.tryonbd.backend.response.UserResponse role(@PathVariable("id") Long id, @RequestBody java.util.Map<String,String> request) { return service.changeRole(id,request.get("role")); }
     @PostMapping
     public ResponseEntity<UserResponse> create(@Valid @RequestBody CreateUserRequest request) {
         var result = service.createUser(request);

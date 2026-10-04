@@ -17,14 +17,13 @@ public class CreateProductRequest {
     private String name;
 
     @NotNull
-    @Positive
+    @PositiveOrZero
     private java.math.BigDecimal price;
 
     @NotNull
     @PositiveOrZero
     private Integer stockQuantity;
 
-    @NotBlank
     private String imageUrl;
 
     public Integer getSellerId() {

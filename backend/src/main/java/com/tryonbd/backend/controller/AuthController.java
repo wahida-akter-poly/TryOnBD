@@ -8,7 +8,6 @@ import com.tryonbd.backend.request.LoginRequest;
 import com.tryonbd.backend.response.AuthResponse;
 import com.tryonbd.backend.response.UserResponse;
 import jakarta.validation.Valid;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -23,7 +22,6 @@ import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/auth")
-@ConditionalOnBean(UserRepository.class)
 public class AuthController {
 
     private final UserRepository userRepository;

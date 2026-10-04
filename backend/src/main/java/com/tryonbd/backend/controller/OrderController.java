@@ -13,7 +13,7 @@ public class OrderController {
     private final PersistenceService service;
     public OrderController(PersistenceService service) { this.service = service; }
     @PostMapping
-    public ResponseEntity<OrderResponse> create(@Valid @RequestBody CreateOrderRequest request) {
+    public ResponseEntity<OrderResponse> create(@RequestBody(required = false) CreateOrderRequest request) {
         var result = service.createOrder(request);
         return ResponseEntity.created(URI.create("/api/orders/" + result.id())).body(result);
     }

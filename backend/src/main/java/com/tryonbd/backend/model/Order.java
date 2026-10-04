@@ -6,6 +6,11 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "orders")
 public class Order extends BaseEntity {
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private java.util.List<java.util.Map<String, Object>> items = new java.util.ArrayList<>();
+    public java.util.List<java.util.Map<String, Object>> getItems() { return items == null ? new java.util.ArrayList<>() : items; }
+    public void setItems(java.util.List<java.util.Map<String, Object>> items) { this.items = items; }
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(nullable = false)
     private User user;

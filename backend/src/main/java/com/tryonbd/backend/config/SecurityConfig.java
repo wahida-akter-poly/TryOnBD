@@ -62,13 +62,19 @@ public class SecurityConfig {
         http
             .csrf(AbstractHttpConfigurer::disable)
             .cors(cors -> {})
+            .exceptionHandling(e -> e.authenticationEntryPoint((req, res, ex) -> res.sendError(401)).accessDeniedHandler((req, res, ex) -> res.sendError(403)))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authenticationProvider(authenticationProvider)
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/products/**", "/api/categories/**").permitAll()
+                .requestMatchers("/api/account/**").authenticated()
+                .requestMatchers("/api/users/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
+                .requestMatchers("/api/sellers/**", "/api/categories/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
+                .requestMatchers("/api/products/**").hasAnyRole("SELLER", "ADMIN", "SUPER_ADMIN")
+                .requestMatchers("/api/reviews/**").denyAll()
                 .requestMatchers("/api/carts/**", "/api/orders/**", "/api/try-on-sessions/**").authenticated()
-                .anyRequest().authenticated())
+                .anyRequest().denyAll())
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
