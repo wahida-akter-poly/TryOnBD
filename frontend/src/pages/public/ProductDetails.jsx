@@ -17,6 +17,10 @@ export default function ProductDetails() {
     let active = true;
     setProduct(null);
     setError('');
+    if (!/^[1-9]\d*$/.test(id)) {
+      setError('Choose a valid product from the collection.');
+      return;
+    }
     services.products
       .get(id)
       .then(({ data }) => {

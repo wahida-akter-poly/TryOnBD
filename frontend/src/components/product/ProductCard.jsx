@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { imageSource, arEngine } from '../../services/catalog';
-import { Price } from '../common/UI';
+import { Button, Price } from '../common/UI';
+import { useApp } from '../../context/AppContext';
 export function ProductImage({ product, className = '', ...props }) {
   const src = imageSource(product.imageUrl);
   const [loaded, setLoaded] = useState(null),
@@ -35,6 +36,8 @@ export function ProductImage({ product, className = '', ...props }) {
   );
 }
 export default function ProductCard({ product }) {
+  const { identity, addToCart } = useApp();
+  const [busy, setBusy] = useState(false);
   return (
     <article className="product-card">
       <Link to={`/products/${product.id}`}>
@@ -47,10 +50,29 @@ export default function ProductCard({ product }) {
       <p className="muted">
         {product.stockQuantity > 0 ? `${product.stockQuantity} in stock` : 'Out of stock'}
       </p>
+      <Link className="btn btn-ghost" to={`/products/${product.id}`}>
+        View Details
+      </Link>
       {arEngine(product.arType) && (
         <Link className="btn btn-ghost" to={`/try-on?productId=${product.id}`}>
           Try Virtually
         </Link>
+      )}
+      {identity && (
+        <Button
+          busy={busy}
+          disabled={product.stockQuantity < 1}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await addToCart(product);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Add to Cart
+        </Button>
       )}
     </article>
   );

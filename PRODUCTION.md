@@ -70,7 +70,7 @@ CUSTOMER: real profile, persistent cart, orders, session metadata. SELLER: real 
 
 `ProductImage` uses only `imageUrl`; missing/broken images show a CSS neutral state and loading is explicit. Put real images under `frontend/public` and save their root path (for example `/assets/my-product.png`), or use a supported HTTP(S) URL. Remote images used by AR must permit CORS so canvas capture/download works. Transparent front-facing accessory assets give the intended AR result.
 
-`/try-on?productId=<numeric ID>` fetches that product and chooses the engine from arType: SHIRT/TSHIRT/CLOTHING -> shirt; EYEWEAR/SUNGLASSES -> eyewear; NECKLACE/JEWELRY -> necklace. No numeric ID controls behavior. Preview aliases are rejected and never shown. Known IDs 1, 2, 3 retain their SHIRT, EYEWEAR, EYEWEAR records and image URLs. A real necklace must be created before necklaces appear in the live collection.
+`/try-on?productId=<numeric ID>` fetches that product and chooses the engine from arType: SHIRT/TSHIRT/CLOTHING -> shirt; EYEWEAR/SUNGLASSES -> eyewear; NECKLACE/JEWELRY -> necklace. No numeric ID controls behavior. Preview aliases are rejected and never shown. Known IDs 1, 2, 3 retain their SHIRT, EYEWEAR, EYEWEAR records and image URLs. The supplied real necklace is now product 4 in Jewelry; see [real necklace flow and verification](NECKLACE_FLOW.md).
 
 Camera starts only on explicit user action; photo upload begins only after selection. No person photo is preloaded. Existing geometry, tracking hooks, smoothing and camera implementation are preserved. The known Modern Clear image retains its existing temple assembly; arbitrary eyewear uses its own image. The integrated pose worker remains pose-only, without optional segmentation-mask transfer. New assets may need fitting calibration; the existing black-shirt calibration is retained.
 
@@ -120,3 +120,7 @@ gh auth login --hostname github.com --git-protocol https --web
 gh auth setup-git
 git push -u origin feature/backend-driven-production-ui
 ```
+
+## Real necklace integration (5 October 2026)
+
+See [NECKLACE_FLOW.md](NECKLACE_FLOW.md) for the actual asset, PostgreSQL IDs, repeatable import, business values requiring review, ownership fix, and live MediaPipe verification.

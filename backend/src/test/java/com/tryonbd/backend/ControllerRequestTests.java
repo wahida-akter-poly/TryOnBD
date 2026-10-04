@@ -21,6 +21,7 @@ class ControllerRequestTests {
  @Autowired UserRepository users; @Autowired SellerRepository sellers; @Autowired CategoryRepository categories; @Autowired ProductRepository products;
  @Autowired OrderRepository orders; @Autowired CartRepository carts; @Autowired TryOnSessionRepository sessions; @Autowired JwtService jwt;
  @Autowired jakarta.persistence.EntityManager entityManager;
+ @Autowired com.tryonbd.backend.service.NecklaceCatalogImportService necklaceImporter;
  MockMvc mvc; User customer,other,sellerUser,admin,superAdmin; Seller seller,otherSeller; Product product; Category category;
  User user(String role,String email){User u=new User();u.setFullName(role);u.setEmail(email);u.setPassword(new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode("secret123"));u.setRole(role);u.setPhone("01700000000");u.setAddress("Dhaka");return users.save(u);}
  Seller seller(User u){Seller s=new Seller();s.setUser(u);s.setBusinessName("Test Store");s.setContactEmail(u.getEmail());s.setPhone("01700000000");s.setSubscriptionStatus("ACTIVE");return sellers.save(s);}
@@ -59,5 +60,91 @@ class ControllerRequestTests {
  mvc.perform(post(path).header("Authorization",token(customer)).contentType("application/json").content("{\"quantity\":1}")).andExpect(status().isOk());
  mvc.perform(post(path).header("Authorization",token(customer)).contentType("application/json").content("{\"quantity\":2}")).andExpect(status().isOk()).andExpect(jsonPath("$."+product.getId()).value(3));
  mvc.perform(put(path).header("Authorization",token(customer)).contentType("application/json").content("{}")).andExpect(status().isBadRequest());
+ }
+
+ @Test void realNecklaceImportIsIdempotentAndPreservesExistingProducts() {
+     var first=necklaceImporter.importFiles(seller.getId(),java.util.List.of("silver-diamond-necklace.png","pearl-necklace.png"));
+     assertEquals(2,first.size());
+     assertEquals("Silver Diamond Necklace",first.getFirst().name());
+     assertEquals(0,first.getFirst().price().signum());
+     assertEquals(0,first.getFirst().stockQuantity());
+     assertEquals("NECKLACE",first.getFirst().arType());
+     assertEquals("Jewelry",first.getFirst().categoryName());
+     assertEquals("/assets/jewelry/necklaces/silver-diamond-necklace.png",first.getFirst().imageUrl());
+     var second=necklaceImporter.importFiles(seller.getId(),java.util.List.of("silver-diamond-necklace.png","pearl-necklace.png"));
+     assertEquals(first.stream().map(p->p.id()).toList(),second.stream().map(p->p.id()).toList());
+     assertEquals(3,products.count());
+     assertEquals(2,categories.count());
+     entityManager.flush();entityManager.clear();
+     assertEquals("Test Shirt",products.findById(product.getId()).orElseThrow().getName());
+     assertEquals("SHIRT",products.findById(product.getId()).orElseThrow().getArType());
+ }
+
+ @Test void importRetainsBusinessValuesAndRejectsConflictingImages() {
+     var imported=necklaceImporter.importFiles(seller.getId(),java.util.List.of("necklace.png")).getFirst();
+     Product necklace=products.findById(imported.id()).orElseThrow();
+     necklace.setPrice(new BigDecimal("850"));necklace.setStockQuantity(7);products.save(necklace);
+     var repeated=necklaceImporter.importFiles(seller.getId(),java.util.List.of("necklace.png")).getFirst();
+     assertEquals(new BigDecimal("850"),repeated.price());assertEquals(7,repeated.stockQuantity());
+     necklace.setArType("EYEWEAR");products.save(necklace);
+     assertThrows(IllegalStateException.class,()->necklaceImporter.importFiles(seller.getId(),java.util.List.of("necklace.png")));
+     assertThrows(IllegalArgumentException.class,()->necklaceImporter.importFiles(seller.getId(),java.util.List.of("../bad.png")));
+ }
+
+ @Test void sellerNecklacesPersistSerializeAndEnforceOwnership() throws Exception {
+     var imported=necklaceImporter.importFiles(seller.getId(),java.util.List.of("necklace.png")).getFirst();
+     String body="{\"sellerId\":"+otherSeller.getId()+",\"categoryId\":"+imported.categoryId()+",\"name\":\"Seller Necklace\",\"description\":\"Seller supplied details\",\"price\":1250,\"stockQuantity\":3,\"imageUrl\":\"/assets/jewelry/necklaces/necklace-b.png\",\"arType\":\" necklace \"}";
+     mvc.perform(post("/api/products").header("Authorization",token(sellerUser)).contentType("application/json").content(body))
+       .andExpect(status().isCreated()).andExpect(jsonPath("$.arType").value("NECKLACE"))
+       .andExpect(jsonPath("$.sellerId").value(seller.getId())).andExpect(jsonPath("$.categoryId").value(imported.categoryId()));
+     entityManager.flush();entityManager.clear();
+     Product necklace=products.findAll().stream().filter(p->"Seller Necklace".equals(p.getName())).findFirst().orElseThrow();
+     Long id=necklace.getId();
+     mvc.perform(get("/api/products/"+id)).andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Seller Necklace"))
+       .andExpect(jsonPath("$.price").value(1250)).andExpect(jsonPath("$.stockQuantity").value(3))
+       .andExpect(jsonPath("$.description").value("Seller supplied details"))
+       .andExpect(jsonPath("$.imageUrl").value("/assets/jewelry/necklaces/necklace-b.png"));
+     mvc.perform(get("/api/account/products").header("Authorization",token(sellerUser))).andExpect(status().isOk());
+     mvc.perform(put("/api/products/"+id).header("Authorization",token(other)).contentType("application/json").content(body)).andExpect(status().isForbidden());
+     other.setRole("SELLER");users.save(other);
+     mvc.perform(put("/api/products/"+id).header("Authorization",token(other)).contentType("application/json").content(body)).andExpect(status().isForbidden());
+     String updated=body.replace("Seller Necklace","Updated Necklace").replace("1250","1300").replace("necklace-b.png","necklace-c.png");
+     mvc.perform(put("/api/products/"+id).header("Authorization",token(sellerUser)).contentType("application/json").content(updated))
+       .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Updated Necklace")).andExpect(jsonPath("$.price").value(1300));
+     mvc.perform(put("/api/products/"+id).header("Authorization",token(admin)).contentType("application/json").content(updated)).andExpect(status().isOk());
+     mvc.perform(put("/api/products/"+id).header("Authorization",token(superAdmin)).contentType("application/json").content(updated)).andExpect(status().isOk());
+ }
+
+ @Test void necklaceCartOrderAndSessionReferenceRealProductAndUser() throws Exception {
+     var imported=necklaceImporter.importFiles(seller.getId(),java.util.List.of("necklace.png")).getFirst();
+     Product necklace=products.findById(imported.id()).orElseThrow();necklace.setPrice(new BigDecimal("900"));necklace.setStockQuantity(4);products.save(necklace);
+     String cartPath="/api/account/cart/"+necklace.getId();
+     mvc.perform(post(cartPath).header("Authorization",token(customer)).contentType("application/json").content("{\"quantity\":1}")).andExpect(status().isOk());
+     mvc.perform(put(cartPath).header("Authorization",token(customer)).contentType("application/json").content("{\"quantity\":2}")).andExpect(status().isOk());
+     entityManager.flush();entityManager.clear();
+     mvc.perform(get("/api/account/cart").header("Authorization",token(customer))).andExpect(jsonPath("$."+necklace.getId()).value(2));
+     mvc.perform(post("/api/try-on-sessions").header("Authorization",token(customer)).contentType("application/json")
+       .content("{\"productId\":"+necklace.getId()+",\"userId\":"+other.getId()+",\"tryOnType\":\"SHIRT\",\"inputImageUrl\":\"urn:tryonbd:capture:upload:640x480\"}"))
+       .andExpect(status().isCreated()).andExpect(jsonPath("$.productId").value(necklace.getId()))
+       .andExpect(jsonPath("$.userId").value(customer.getId())).andExpect(jsonPath("$.tryOnType").value("NECKLACE"));
+     mvc.perform(post("/api/account/checkout").header("Authorization",token(customer)))
+       .andExpect(status().isOk()).andExpect(jsonPath("$.totalAmount").value(1800))
+       .andExpect(jsonPath("$.items[0].productId").value(necklace.getId())).andExpect(jsonPath("$.items[0].quantity").value(2));
+     entityManager.flush();entityManager.clear();
+     assertEquals(2,products.findById(necklace.getId()).orElseThrow().getStockQuantity());
+     mvc.perform(get("/api/account/cart").header("Authorization",token(customer))).andExpect(content().json("{}"));
+     mvc.perform(get("/api/try-on-sessions").header("Authorization",token(customer))).andExpect(jsonPath("$[0].tryOnType").value("NECKLACE"));
+     mvc.perform(put(cartPath).header("Authorization",token(customer)).contentType("application/json").content("{\"quantity\":1}")).andExpect(status().isOk());
+     mvc.perform(put(cartPath).header("Authorization",token(customer)).contentType("application/json").content("{\"quantity\":0}")).andExpect(content().json("{}"));
+ }
+
+ @Test void sellerCatalogIncludesAllLegacyProfilesOwnedByJwtUser() throws Exception {
+     Seller second=seller(sellerUser);
+     var imported=necklaceImporter.importFiles(second.getId(),java.util.List.of("owned-necklace.png")).getFirst();
+     mvc.perform(get("/api/account/products").header("Authorization",token(sellerUser)))
+       .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2))
+       .andExpect(jsonPath("$[?(@.id == "+imported.id()+")].sellerId").value(org.hamcrest.Matchers.contains(second.getId().intValue())));
+     other.setRole("SELLER");users.save(other);
+     mvc.perform(get("/api/account/products").header("Authorization",token(other))).andExpect(content().json("[]"));
  }
 }

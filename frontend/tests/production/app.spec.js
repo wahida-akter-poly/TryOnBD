@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 const products = [
   {
     id: 1,
@@ -20,12 +21,21 @@ const products = [
   },
   {
     id: 3,
+    name: 'Classic Aviator',
+    arType: 'EYEWEAR',
+    price: 30,
+    stockQuantity: 1,
+    categoryId: 45,
+    imageUrl: '/assets/face-ar/sunglasses/aviator-real.png',
+  },
+  {
+    id: 78,
     name: 'API Necklace',
     arType: 'NECKLACE',
     price: 30,
-    stockQuantity: 1,
+    stockQuantity: 2,
     categoryId: 46,
-    imageUrl: '/assets/overlay-necklace.svg',
+    imageUrl: '/assets/jewelry/necklaces/silver-diamond-necklace.png',
   },
 ];
 async function setup(page, list = products) {
@@ -86,7 +96,8 @@ test('AR uses real product types with no initial person or preview alias', async
   await setup(page);
   for (const [id, heading] of [
     [2, 'Find your frame.'],
-    [3, 'Necklace Virtual Try-On'],
+    [3, 'Find your frame.'],
+    [78, 'Necklace Virtual Try-On'],
   ]) {
     await page.goto(`/try-on?productId=${id}`);
     await expect(page.getByRole('heading', { name: heading })).toBeVisible();
@@ -200,6 +211,10 @@ test('seller management fetches own products and writes controlled AR metadata',
   await page.getByLabel('Stock', { exact: true }).fill('4');
   await page.getByLabel('Category', { exact: true }).selectOption('46');
   await page.getByLabel('AR type').selectOption('NECKLACE');
+  await page
+    .getByLabel('Image URL or local asset path')
+    .fill('/assets/jewelry/necklaces/silver-diamond-necklace.png');
+  await page.getByLabel('Description', { exact: true }).fill('Seller supplied necklace details');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Create product' })).toBeEnabled();
   expect(payload).toMatchObject({
@@ -209,7 +224,8 @@ test('seller management fetches own products and writes controlled AR metadata',
     sellerId: 77,
     categoryId: 46,
     arType: 'NECKLACE',
-    imageUrl: '',
+    imageUrl: '/assets/jewelry/necklaces/silver-diamond-necklace.png',
+    description: 'Seller supplied necklace details',
   });
 });
 
@@ -241,4 +257,177 @@ test('removed cart products never display invented zero totals and can be remove
   await expect(page.getByRole('button', { name: 'Place order' })).toBeDisabled();
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your cart is empty' })).toBeVisible();
+});
+
+test('Jewelry is empty without matching backend products', async ({ page }) => {
+  await setup(
+    page,
+    products.filter((p) => p.arType !== 'NECKLACE'),
+  );
+  await page.goto('/products?group=Jewelry');
+  await expect(page.getByRole('heading', { name: 'Jewelry', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'No products here yet' })).toBeVisible();
+  await expect(page.locator('.product-card')).toHaveCount(0);
+});
+
+test('multiple necklaces use selected backend details and overlay URLs', async ({ page }) => {
+  const second = {
+    ...products.find((p) => p.id === 78),
+    id: 91,
+    name: 'Second Necklace',
+    imageUrl: '/assets/jewelry/necklaces/silver-diamond-necklace.png?variant=b',
+    categoryId: 501,
+  };
+  await setup(page, [...products, second]);
+  await page.goto('/products?group=Jewelry');
+  await expect(page.locator('.product-card')).toHaveCount(2);
+  await expect(page.locator('a[href*="necklace-preview"]')).toHaveCount(0);
+  for (const product of [products.find((p) => p.id === 78), second]) {
+    await page.goto(`/products/${product.id}`);
+    await expect(page.getByRole('heading', { name: product.name, exact: true })).toBeVisible();
+    await expect(page.getByRole('img', { name: product.name, exact: true })).toHaveAttribute(
+      'src',
+      product.imageUrl,
+    );
+    await page.getByRole('link', { name: 'Try Virtually', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`productId=${product.id}$`));
+    await expect(page.getByLabel('Necklace try-on canvas')).toHaveAttribute(
+      'data-overlay-src',
+      product.imageUrl,
+    );
+    await expect(
+      page.getByText('Start your camera or upload a clear, front-facing photo.'),
+    ).toBeVisible();
+    await expect(page.locator('video')).toHaveJSProperty('srcObject', null);
+  }
+});
+
+test('unavailable necklace asset shows an error without a fallback overlay', async ({ page }) => {
+  await setup(page, [{ ...products.find((p) => p.id === 78), imageUrl: '/missing-necklace.png' }]);
+  await page.route('**/missing-necklace.png', (route) => route.fulfill({ status: 404, body: '' }));
+  await page.goto('/try-on?productId=78');
+  await expect(page.getByText('Necklace asset could not be loaded.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download PNG', exact: true })).toHaveCount(0);
+});
+
+test('invalid product detail IDs never request the numeric product API', async ({ page }) => {
+  await setup(page);
+  const detailRequests = [];
+  page.on('request', (request) => {
+    if (/\/api\/products\//.test(request.url())) detailRequests.push(request.url());
+  });
+  await page.goto('/products/necklace-preview');
+  await expect(page.getByText('Choose a valid product from the collection.')).toBeVisible();
+  expect(detailRequests).toEqual([]);
+});
+
+test('necklace photo uses MediaPipe, exports the real asset and saves product metadata', async ({
+  page,
+}) => {
+  await setup(page);
+  await page.addInitScript(() => localStorage.setItem('tryonbd:token', 'photo-test-token'));
+  let savedSession;
+  await page.route('**/api/account/**', (route) => {
+    const path = new URL(route.request().url()).pathname;
+    return route.fulfill({
+      json: path.endsWith('/me') ? { id: 55, fullName: 'Photo Customer', role: 'CUSTOMER' } : {},
+    });
+  });
+  await page.route('**/api/orders', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/try-on-sessions', (route) => {
+    if (route.request().method() === 'POST') {
+      savedSession = route.request().postDataJSON();
+      return route.fulfill({ status: 201, json: { id: 501, userId: 55, ...savedSession } });
+    }
+    return route.fulfill({ json: savedSession ? [{ id: 501, userId: 55, ...savedSession }] : [] });
+  });
+  await page.goto('/try-on?productId=78');
+  await expect(page.getByRole('heading', { name: 'Necklace Virtual Try-On' })).toBeVisible();
+  await page
+    .getByLabel('Upload photo', { exact: true })
+    .setInputFiles('tests/fixtures/shirt-hands-on-hips.jpg');
+  await expect(page.getByText('Pose detected', { exact: true })).toBeVisible({ timeout: 45000 });
+  const downloadEvent = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download PNG', exact: true }).click();
+  const download = await downloadEvent;
+  expect(download.suggestedFilename()).toBe('tryonbd-necklace-result.png');
+  await page.getByRole('button', { name: 'Save Try-On', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Try-On saved', exact: true })).toBeDisabled();
+  expect(savedSession).toMatchObject({ productId: 78, tryOnType: 'NECKLACE' });
+  expect(savedSession.inputImageUrl).toMatch(/^urn:tryonbd:capture:upload:[1-9]\d*x[1-9]\d*$/);
+  expect(savedSession.userId).toBeUndefined();
+});
+
+test('necklace camera starts only on request and handles permission denial', async ({ page }) => {
+  await setup(page);
+  await page.addInitScript(() => {
+    window.cameraRequests = 0;
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      configurable: true,
+      value: async () => {
+        window.cameraRequests++;
+        throw new DOMException('Denied for test', 'NotAllowedError');
+      },
+    });
+  });
+  await page.goto('/try-on?productId=78');
+  await expect(page.getByRole('heading', { name: 'Necklace Virtual Try-On' })).toBeVisible();
+  expect(await page.evaluate(() => window.cameraRequests)).toBe(0);
+  await page.getByRole('button', { name: 'Start Camera', exact: true }).click();
+  await expect(
+    page.getByText(
+      'Camera permission denied. Allow access in your browser settings or upload a photo.',
+    ),
+  ).toBeVisible();
+  expect(await page.evaluate(() => window.cameraRequests)).toBe(1);
+  await expect(page.getByLabel('Upload photo', { exact: true })).toBeAttached();
+});
+
+test('necklace simulated camera captures the fitted asset and releases its stream', async ({
+  page,
+}) => {
+  await setup(page);
+  const photo = await readFile('tests/fixtures/shirt-hands-on-hips.jpg');
+  await page.route('**/__test-camera-source.jpg', (route) =>
+    route.fulfill({ contentType: 'image/jpeg', body: photo }),
+  );
+  await page.addInitScript(() => {
+    window.cameraRequests = 0;
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      configurable: true,
+      value: async () => {
+        window.cameraRequests++;
+        const image = new Image();
+        image.src = '/__test-camera-source.jpg';
+        await image.decode();
+        const canvas = Object.assign(document.createElement('canvas'), {
+          width: image.naturalWidth,
+          height: image.naturalHeight,
+        });
+        const context = canvas.getContext('2d');
+        context.drawImage(image, 0, 0);
+        setInterval(() => context.drawImage(image, 0, 0), 40);
+        const stream = canvas.captureStream(24);
+        window.testCameraTrack = stream.getVideoTracks()[0];
+        return stream;
+      },
+    });
+    Object.defineProperty(navigator.mediaDevices, 'enumerateDevices', {
+      configurable: true,
+      value: async () => [],
+    });
+  });
+  await page.goto('/try-on?productId=78');
+  await expect(page.getByRole('heading', { name: 'Necklace Virtual Try-On' })).toBeVisible();
+  expect(await page.evaluate(() => window.cameraRequests)).toBe(0);
+  await page.getByRole('button', { name: 'Start Camera', exact: true }).click();
+  await expect(page.getByText('Pose detected', { exact: true })).toBeVisible({ timeout: 45000 });
+  await expect(page.getByRole('button', { name: 'Capture', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Capture', exact: true }).click();
+  await expect(page.getByText('Captured', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.testCameraTrack.readyState)).toBe('ended');
+  await expect(page.locator('video')).toHaveJSProperty('srcObject', null);
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download PNG', exact: true }).click();
+  expect((await downloaded).suggestedFilename()).toBe('tryonbd-necklace-result.png');
 });

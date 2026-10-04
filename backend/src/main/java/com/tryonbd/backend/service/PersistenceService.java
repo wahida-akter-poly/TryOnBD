@@ -46,7 +46,7 @@ public class PersistenceService {
     }
     public UserResponse me() { return UserResponse.from(currentUser()); }
     public SellerResponse sellerProfile() { return SellerResponse.from(sellerRepository.findFirstByUserIdOrderByIdAsc(currentUser().getId()).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Seller profile not configured. Contact an administrator."))); }
-    public List<ProductResponse> sellerProducts() { return productRepository.findBySellerId(sellerProfile().id()).stream().map(ProductResponse::from).toList(); }
+    public List<ProductResponse> sellerProducts() { return productRepository.findBySellerUserId(currentUser().getId()).stream().map(ProductResponse::from).toList(); }
     private Cart myCart() {
         User user = currentUser(); userRepository.lockById(user.getId()).orElseThrow();
         return cartRepository.findByUserId(user.getId()).stream().findFirst().orElseGet(() -> { Cart cart = new Cart(); cart.setUser(user); return cartRepository.save(cart); });

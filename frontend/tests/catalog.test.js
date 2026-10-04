@@ -48,3 +48,42 @@ test('missing or unsafe image URLs never acquire fallback photos', () => {
   ])
     assert.equal(imageSource(input), input);
 });
+
+test('multiple numeric necklaces preserve each backend image and arbitrary category', () => {
+  const input = [
+    {
+      id: 78,
+      name: 'Necklace A',
+      arType: ' necklace ',
+      price: '850.50',
+      stockQuantity: 2,
+      categoryId: 501,
+      sellerId: 22,
+      imageUrl: '/assets/jewelry/necklaces/a.png',
+    },
+    {
+      id: 91,
+      name: 'Necklace B',
+      arType: 'NECKLACE',
+      price: '1200',
+      stockQuantity: 0,
+      categoryId: 902,
+      sellerId: 23,
+      imageUrl: '/assets/jewelry/necklaces/b.png',
+    },
+  ];
+  for (const raw of input) {
+    const product = normalizeProduct(raw);
+    assert.equal(product.id, raw.id);
+    assert.equal(product.engine, 'necklace');
+    assert.equal(product.imageUrl, raw.imageUrl);
+    assert.equal(product.categoryId, raw.categoryId);
+    assert.equal(product.sellerId, raw.sellerId);
+    assert.equal(product.stockQuantity, raw.stockQuantity);
+  }
+  assert.equal(
+    normalizeProduct({ id: 3, arType: 'EYEWEAR', categoryId: 501 }).engine,
+    'sunglasses',
+  );
+  assert.equal(normalizeProduct({ id: 88, arType: 'NONE', categoryId: 501 }).engine, null);
+});

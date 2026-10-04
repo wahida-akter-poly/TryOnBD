@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import { useNecklaceTracking } from '../../hooks/useNecklaceTracking.js';
 import { necklaceVisibility } from './necklaceGeometry.js';
+import { visibleAssetBounds, necklaceDrawRect } from './necklaceAssets.js';
 
 const copy = (canvas) => {
   const result = Object.assign(document.createElement('canvas'), {
@@ -14,7 +15,26 @@ const copy = (canvas) => {
 const loadAsset = (src) =>
   new Promise((resolve, reject) => {
     const image = new Image();
-    image.onload = () => resolve(image);
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      try {
+        const canvas = Object.assign(document.createElement('canvas'), {
+          width: image.naturalWidth,
+          height: image.naturalHeight,
+        });
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(image, 0, 0);
+        const bounds = visibleAssetBounds(ctx.getImageData(0, 0, canvas.width, canvas.height));
+        if (!bounds) throw new Error('This necklace image has no visible content.');
+        resolve({ image, bounds });
+      } catch {
+        reject(
+          new Error(
+            'Necklace image is unavailable for capture. Use a local PNG or an image with CORS access.',
+          ),
+        );
+      }
+    };
     image.onerror = () => reject(new Error('Necklace asset could not be loaded.'));
     image.src = src;
   });
@@ -112,19 +132,29 @@ export default forwardRef(function NecklaceOverlay({ source, overlay, retry, onS
         ctx.drawImage(source.composite, 0, 0, target.width, target.height);
       } else {
         const geometry = track.current?.geometry;
-        const visibility = source.live ? necklaceVisibility(track.current, performance.now()) : geometry ? 1 : 0;
+        const visibility = source.live
+          ? necklaceVisibility(track.current, performance.now())
+          : geometry
+            ? 1
+            : 0;
         if (asset.current && geometry && visibility > 0) {
           ctx.save();
           ctx.globalAlpha = visibility;
           ctx.translate(geometry.center.x, geometry.center.y);
           ctx.rotate(geometry.rotation);
           ctx.scale(geometry.xCompression, 1);
+          const { image, bounds } = asset.current;
+          const rect = necklaceDrawRect(bounds, geometry);
           ctx.drawImage(
-            asset.current,
-            -geometry.width / 2,
-            -geometry.height * 0.24,
-            geometry.width,
-            geometry.height,
+            image,
+            bounds.x,
+            bounds.y,
+            bounds.width,
+            bounds.height,
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
           );
           ctx.restore();
         }
@@ -154,5 +184,12 @@ export default forwardRef(function NecklaceOverlay({ source, overlay, retry, onS
     };
   }, [source, dimensions, retry]);
 
-  return <canvas ref={canvas} className="tryon-canvas" aria-label="Necklace try-on canvas" />;
+  return (
+    <canvas
+      ref={canvas}
+      className="tryon-canvas"
+      aria-label="Necklace try-on canvas"
+      data-overlay-src={overlay}
+    />
+  );
 });
