@@ -1,4 +1,4 @@
-// Frontend-only fitting configuration. Never included in Product API DTOs.
+// Legacy fitting for existing real eyewear; new product parts/fit arrive through Product API metadata.
 // Set src to a real front-facing transparent PNG/WebP when available.
 // Current illustrations are explicitly fallback assets, not product photographs.
 // Calibrated against the portrait fixture: 354px face span, 165px eye-center span.
@@ -175,8 +175,8 @@ export const accessoryStyles = [
 ];
 
 // Real product parts keyed by their front asset, never a database ID. Additional
-// photographed products can register parts and fit here without another engine
-// or database entity. imageUrl remains authoritative for the front texture.
+// photographed products resolve persisted arMetadata automatically. This registry
+// preserves existing products; imageUrl remains authoritative for the front texture.
 export const eyewearAssetManifests = Object.freeze(
   Object.fromEntries(
     sunglassesStyles
@@ -207,21 +207,33 @@ export function sunglassesAssetFor(product, style) {
   // Cache query strings do not invalidate local part calibration. Unknown or
   // external product URLs receive their own front only, without substitute arms.
   const key = typeof src === 'string' && src.startsWith('/') ? src.split(/[?#]/)[0] : src;
-  const manifest = eyewearAssetManifests[key];
+  const imported = product?.arMetadata;
+  // Metadata for an old front must never attach its temples to an edited image.
+  const manifest = imported
+    ? imported.frontAsset === src
+      ? {
+          leftTempleSrc: imported.leftTempleAsset,
+          rightTempleSrc: imported.rightTempleAsset,
+          fit: imported.fitProfile,
+        }
+      : null
+    : eyewearAssetManifests[key];
   return {
     src,
     frontFrameSrc: src,
     leftTempleSrc: manifest?.leftTempleSrc ?? null,
     rightTempleSrc: manifest?.rightTempleSrc ?? null,
     fallbackSrc: null,
-    fit: manifest?.fit ?? {
+    fit: {
       bridgePivot: style?.bridgePivot,
       widthMultiplier: style?.widthMultiplier ?? 0.92,
       verticalOffset: style?.verticalOffset ?? 0.03,
       rotationOffset: 0,
       opacity: 100,
+      ...manifest?.fit,
     },
   };
 }
 
-export const supportsFaceAR = (product) => product?.engine === 'sunglasses';
+export const supportsFaceAR = (product) =>
+  product?.engine === 'sunglasses' && product?.arAvailable === true;

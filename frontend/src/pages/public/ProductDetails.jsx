@@ -56,11 +56,14 @@ export default function ProductDetails() {
           <p>{product.description}</p>
           {product.sellerName && <p>Sold by {product.sellerName}</p>}
           <p>{product.stockQuantity > 0 ? `${product.stockQuantity} available` : 'Out of stock'}</p>
-          {product.engine && (
+          {product.arAvailable && (
             <Link className="btn btn-primary" to={`/try-on?productId=${product.id}`}>
               Try Virtually
             </Link>
           )}{' '}
+          {product.engine && !product.arAvailable && (
+            <p>Virtual try-on is unavailable for this product.</p>
+          )}
           {identity ? (
             <Button
               busy={busy}

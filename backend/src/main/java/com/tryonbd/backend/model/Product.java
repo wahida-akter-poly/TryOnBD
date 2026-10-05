@@ -7,6 +7,25 @@ import java.time.LocalDateTime;
 @Table(name = "products")
 public class Product extends BaseEntity {
     
+    // Only the opt-in local importer assigns this unique, stable package identity.
+    @Column(unique = true, length = 180)
+    private String assetKey;
+    public String getAssetKey() { return assetKey; }
+    public void setAssetKey(String value) { assetKey = value; }
+
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private java.util.Map<String, Object> arMetadata;
+    public java.util.Map<String, Object> getArMetadata() { return arMetadata; }
+    public void setArMetadata(java.util.Map<String, Object> value) { arMetadata = value; }
+
+    // Last approved package values allow sync to preserve later seller edits and sales.
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private java.util.Map<String, Object> assetManifest;
+    public java.util.Map<String, Object> getAssetManifest() { return assetManifest; }
+    public void setAssetManifest(java.util.Map<String, Object> value) { assetManifest = value; }
+
     private String name;
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }

@@ -66,10 +66,13 @@ export default function TryOn() {
       </div>
     );
   if (requested && (!product || String(product.id) !== requested)) return <LoadingState />;
-  if (product && !product.engine)
+  if (product && (!product.engine || (product.imageUrl && !product.arAvailable)))
     return (
       <div className="container page">
         <EmptyState title="Virtual try-on is unavailable for this product" />
+        <Link className="btn btn-ghost" to={`/products/${product.id}`}>
+          View product
+        </Link>
       </div>
     );
   if (product && !product.imageUrl)
@@ -90,10 +93,10 @@ export default function TryOn() {
           <LoadingState />
         ) : catalogError ? (
           <ErrorState message={catalogError} retry={refreshCatalog} />
-        ) : state.products.some((p) => p.engine) ? (
+        ) : state.products.some((p) => p.arAvailable) ? (
           <div className="product-grid">
             {state.products
-              .filter((p) => p.engine)
+              .filter((p) => p.arAvailable)
               .map((p) => (
                 <Link className="panel" key={p.id} to={`/try-on?productId=${p.id}`}>
                   {p.name}
@@ -112,7 +115,7 @@ function TryOnStudio({ product }) {
   const [params, setParams] = useSearchParams();
   const arDebug = product.engine === 'sunglasses' && params.get('arDebug') === '1';
   const [adjustFit, setAdjustFit] = useState(false);
-  const products = state.products.filter((p) => p.engine);
+  const products = state.products.filter((p) => p.arAvailable);
   const mode = modeFor(product),
     isAR = mode === 'sunglasses';
   const isNecklace = mode === 'necklace';
@@ -647,12 +650,13 @@ function TryOnStudio({ product }) {
                 Retry image
               </Button>
             )}
-            {products.filter((p) => p.engine === 'sunglasses' && p.id !== product.id).length >
-              0 && (
+            {products.filter(
+              (p) => p.engine === 'sunglasses' && p.arAvailable && p.id !== product.id,
+            ).length > 0 && (
               <section className="eyewear-frames" aria-label="Other eyewear">
                 <h2>Explore more frames</h2>
                 {products
-                  .filter((p) => p.engine === 'sunglasses' && p.id !== product.id)
+                  .filter((p) => p.engine === 'sunglasses' && p.arAvailable && p.id !== product.id)
                   .map((p) => (
                     <Link className="btn btn-ghost" key={p.id} to={`/try-on?productId=${p.id}`}>
                       {p.name}

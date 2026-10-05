@@ -147,4 +147,46 @@ class ControllerRequestTests {
      other.setRole("SELLER");users.save(other);
      mvc.perform(get("/api/account/products").header("Authorization",token(other))).andExpect(content().json("[]"));
  }
+
+ @Autowired com.tryonbd.backend.service.ProductAssetSyncService assetSync;
+ @org.junit.jupiter.api.io.TempDir java.nio.file.Path packageRoot;
+ @Test void importedProductMetadataSurvivesSellerAdminEditsAndUsesGenericCartCheckout() throws Exception {
+     java.nio.file.Path folder=packageRoot.resolve("jewelry/approved-choker");java.nio.file.Files.createDirectories(folder);
+     java.awt.image.BufferedImage image=new java.awt.image.BufferedImage(4,4,java.awt.image.BufferedImage.TYPE_INT_ARGB);image.setRGB(1,1,0xff887744);javax.imageio.ImageIO.write(image,"png",folder.resolve("front.png").toFile());
+     java.nio.file.Files.writeString(folder.resolve("product.json"),"{\"name\":\"Imported Choker\",\"description\":\"Seller supplied details\",\"price\":2899,\"stockQuantity\":12,\"category\":\"Jewelry\",\"arType\":\"NECKLACE\",\"style\":\"CHOKER\",\"sellerId\":"+seller.getId()+"}");
+     var result=assetSync.sync(com.tryonbd.backend.service.ProductAssetPackage.discover(packageRoot),null,false).getFirst();
+     Long id=result.productId();Product imported=products.findById(id).orElseThrow();entityManager.flush();entityManager.clear();
+     mvc.perform(get("/api/products/"+id)).andExpect(status().isOk()).andExpect(jsonPath("$.arMetadata.style").value("CHOKER"))
+       .andExpect(jsonPath("$.imageUrl").value("/assets/products/jewelry/approved-choker/front.png"));
+     mvc.perform(get("/api/account/products").header("Authorization",token(sellerUser))).andExpect(status().isOk()).andExpect(jsonPath("$[?(@.id == "+id+")].name").value("Imported Choker"));
+     String edit="{\"name\":\"Imported Choker\",\"description\":\"Seller supplied details\",\"price\":2899,\"stockQuantity\":12,\"categoryId\":"+imported.getCategory().getId()+",\"imageUrl\":\"/assets/products/jewelry/approved-choker/front.png\",\"arType\":\"NECKLACE\"}";
+     for(User manager:java.util.List.of(sellerUser,admin,superAdmin))
+       mvc.perform(put("/api/products/"+id).header("Authorization",token(manager)).contentType("application/json").content(edit))
+         .andExpect(status().isOk()).andExpect(jsonPath("$.arMetadata.style").value("CHOKER"));
+     mvc.perform(put("/api/products/"+id).header("Authorization",token(other)).contentType("application/json").content(edit)).andExpect(status().isForbidden());
+     mvc.perform(put("/api/account/cart/"+id).header("Authorization",token(customer)).contentType("application/json").content("{\"quantity\":13}")).andExpect(status().isConflict());
+     mvc.perform(put("/api/account/cart/"+id).header("Authorization",token(customer)).contentType("application/json").content("{\"quantity\":2}")).andExpect(status().isOk());
+     mvc.perform(post("/api/account/checkout").header("Authorization",token(customer))).andExpect(status().isOk())
+       .andExpect(jsonPath("$.totalAmount").value(5798)).andExpect(jsonPath("$.items[0].productId").value(id));
+     assertEquals(10,products.findById(id).orElseThrow().getStockQuantity());
+ }
+ @Test void productApiAcceptsValidatedMetadataAndRejectsUnknownStyleOrUnboundedFit() throws Exception {
+     String base="{\"sellerId\":"+seller.getId()+",\"categoryId\":"+category.getId()+",\"name\":\"Product\",\"price\":1,\"stockQuantity\":1,\"arType\":\"NECKLACE\",\"imageUrl\":\"/assets/real.png\",\"arMetadata\":{\"frontAsset\":\"/assets/real.png\",\"style\":\"CHOKER\",\"fitProfile\":{\"widthRatio\":0.8}}}";
+     mvc.perform(post("/api/products").header("Authorization",token(sellerUser)).contentType("application/json").content(base)).andExpect(status().isCreated()).andExpect(jsonPath("$.arMetadata.style").value("CHOKER"));
+     for(String invalid:java.util.List.of(base.replace("CHOKER","UNKNOWN"),base.replace("0.8","50"),base.replace("frontAsset","unknownAsset")))
+       mvc.perform(post("/api/products").header("Authorization",token(sellerUser)).contentType("application/json").content(invalid)).andExpect(status().isBadRequest());
+ }
+
+ @Test void packageAssetsArePublicPngOnlyAndCannotExposeManifestOrEscapeDirectory() throws Exception {
+     mvc.perform(get("/assets/products/jewelry/royal-gold-choker/front.png").header("Origin","http://127.0.0.1:5175"))
+       .andExpect(status().isOk()).andExpect(header().string("Access-Control-Allow-Origin","*"));
+     mvc.perform(get("/api/account/me").header("Origin","https://untrusted.example")).andExpect(status().isForbidden());
+     mvc.perform(get("/assets/products/jewelry/royal-gold-choker/front.png")).andExpect(status().isOk())
+       .andExpect(content().contentType("image/png")).andExpect(header().string("Cache-Control","no-cache"));
+     mvc.perform(get("/assets/products/jewelry/royal-gold-choker/product.json")).andExpect(status().isNotFound());
+     mvc.perform(get("/assets/products/jewelry/royal-gold-choker/missing.png")).andExpect(status().isNotFound());
+     mvc.perform(get("/assets/products/unknown/royal-gold-choker/front.png")).andExpect(status().isNotFound());
+     mvc.perform(get("/assets/products/jewelry/../front.png")).andExpect(status().is4xxClientError());
+     mvc.perform(post("/assets/products/jewelry/royal-gold-choker/front.png").header("Authorization",token(sellerUser))).andExpect(status().isForbidden());
+ }
 }

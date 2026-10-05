@@ -37,3 +37,15 @@ dependencies {
 tasks.named('test') {
 	useJUnitPlatform()
 }
+
+// Opt-in local catalog sync. Uses the existing datasource environment, no HTTP server.
+tasks.register('syncProducts', JavaExec) {
+    group = 'application'
+    description = 'Validate and sync real product asset packages into the configured database'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.tryonbd.backend.TryonbdBackendApplication'
+    args '--spring.profiles.active=product-sync', '--spring.main.web-application-type=none',
+        '--spring.jpa.show-sql=false', '--spring.main.banner-mode=off', '--debug=false',
+        '--logging.level.root=warn', '--logging.level.org.hibernate.SQL=warn'
+    if (project.hasProperty('dryRun')) args '--product.sync.dry-run=true'
+}

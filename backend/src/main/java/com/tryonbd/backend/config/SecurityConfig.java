@@ -18,6 +18,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import com.tryonbd.backend.repository.UserRepository;
 
 @Configuration
+@org.springframework.context.annotation.Profile("!product-sync")
 public class SecurityConfig {
 
     @Bean
@@ -67,7 +68,8 @@ public class SecurityConfig {
             .authenticationProvider(authenticationProvider)
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/products/**", "/api/categories/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/products/**", "/api/categories/**", "/assets/products/**").permitAll()
+                .requestMatchers(HttpMethod.HEAD, "/assets/products/**").permitAll()
                 .requestMatchers("/api/account/**").authenticated()
                 .requestMatchers("/api/users/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
                 .requestMatchers("/api/sellers/**", "/api/categories/**").hasAnyRole("ADMIN", "SUPER_ADMIN")

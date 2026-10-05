@@ -78,4 +78,8 @@ public class CreateProductRequest {
     public String getDescription() { return description; }
     public void setDescription(String value) { description = value; }
     public String getArType() { return arType; }
-    public void setArType(String value) { arType = value; }}
+    public void setArType(String value) { arType = value; }
+    private java.util.Map<String, Object> arMetadata;
+    public java.util.Map<String, Object> getArMetadata() { return arMetadata; }
+    public void setArMetadata(java.util.Map<String, Object> value) { arMetadata = value; }
+}

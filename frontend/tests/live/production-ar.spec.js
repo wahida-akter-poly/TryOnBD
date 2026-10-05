@@ -23,7 +23,9 @@ test('live PostgreSQL product-by-id APIs and real eyewear/shirt photo flows', as
     products.push(product);
   }
   await mkdir('artifacts', { recursive: true });
-  for (const product of products.filter((p) => p.arType !== 'NECKLACE')) {
+  for (const product of products.filter(
+    (p) => p.arType !== 'NECKLACE' && p.name !== 'Classic Aviator',
+  )) {
     await page.goto(`/products/${product.id}`);
     await expect(page.getByRole('img', { name: product.name, exact: true })).toHaveAttribute(
       'src',
@@ -55,6 +57,13 @@ test('live PostgreSQL product-by-id APIs and real eyewear/shirt photo flows', as
     expect(await download.failure()).toBeNull();
     await download.saveAs(`artifacts/live-ar-product-${product.id}-capture.png`);
   }
+  await page.goto('/products/3');
+  await expect(page.getByText('Virtual try-on is unavailable for this product.')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Try Virtually', exact: true })).toHaveCount(0);
+  await page.goto('/try-on?productId=3');
+  await expect(
+    page.getByRole('heading', { name: 'Virtual try-on is unavailable for this product' }),
+  ).toBeVisible();
   // Live requests are read-only. No cart, account, catalog or order writes.
   for (const path of ['/api/account/me', '/api/account/products', '/api/users', '/api/orders'])
     expect((await request.get(path)).status()).toBe(401);

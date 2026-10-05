@@ -18,6 +18,11 @@ const products = [
     stockQuantity: 3,
     categoryId: 45,
     imageUrl: '/missing.png',
+    arMetadata: {
+      frontAsset: '/missing.png',
+      leftTempleAsset: '/assets/face-ar/sunglasses/modern-clear-left-temple-normalized.png',
+      rightTempleAsset: '/assets/face-ar/sunglasses/modern-clear-right-temple-normalized.png',
+    },
   },
   {
     id: 3,
@@ -96,7 +101,6 @@ test('AR uses real product types with no initial person or preview alias', async
   await setup(page);
   for (const [id, heading] of [
     [2, 'Find your frame.'],
-    [3, 'Find your frame.'],
     [78, 'Necklace Virtual Try-On'],
   ]) {
     await page.goto(`/try-on?productId=${id}`);

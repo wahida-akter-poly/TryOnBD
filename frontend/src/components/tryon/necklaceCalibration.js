@@ -43,6 +43,22 @@ export function necklaceCalibration(product) {
   } catch {
     /* Retain malformed filename text. */
   }
-  const style = styleIn(product?.name) || styleIn(filename) || 'SHORT';
-  return necklaceStyles[style];
+  const supplied = String(product?.arMetadata?.style || '').toUpperCase();
+  const style =
+    (necklaceStyles[supplied] && supplied) ||
+    styleIn(product?.name) ||
+    styleIn(filename) ||
+    'SHORT';
+  const fit = product?.arMetadata?.fitProfile || {};
+  const limits = {
+    widthRatio: [0.3, 1.2],
+    dropRatio: [-0.2, 0.4],
+    pendantDropRatio: [0, 0.8],
+    heightRatio: [0.1, 1.2],
+  };
+  const calibrated = { ...necklaceStyles[style] };
+  for (const [key, [min, max]] of Object.entries(limits)) {
+    if (Number.isFinite(fit[key]) && fit[key] >= min && fit[key] <= max) calibrated[key] = fit[key];
+  }
+  return Object.freeze(calibrated);
 }

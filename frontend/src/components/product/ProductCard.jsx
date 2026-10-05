@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { imageSource, arEngine } from '../../services/catalog';
+import { imageSource, arCapability } from '../../services/catalog';
 import { Button, Price } from '../common/UI';
 import { useApp } from '../../context/AppContext';
 export function ProductImage({ product, className = '', ...props }) {
@@ -53,7 +53,7 @@ export default function ProductCard({ product }) {
       <Link className="btn btn-ghost" to={`/products/${product.id}`}>
         View Details
       </Link>
-      {arEngine(product.arType) && (
+      {arCapability(product).available && (
         <Link className="btn btn-ghost" to={`/try-on?productId=${product.id}`}>
           Try Virtually
         </Link>

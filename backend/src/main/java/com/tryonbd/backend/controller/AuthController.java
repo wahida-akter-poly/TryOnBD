@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
+@org.springframework.context.annotation.Profile("!product-sync")
 @RequestMapping("/api/auth")
 public class AuthController {
 

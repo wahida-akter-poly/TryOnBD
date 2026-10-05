@@ -194,6 +194,12 @@ public class PersistenceService {
         value.setPrice(request.getPrice());
         value.setImageUrl(request.getImageUrl());
         value.setArType(arType(request.getArType()));
+        if (request.getArMetadata() != null) {
+            validateArMetadata(request.getArMetadata(), value.getArType(), value.getImageUrl());
+            value.setArMetadata(request.getArMetadata());
+        } else if (value.getArMetadata() != null && !java.util.Objects.equals(value.getImageUrl(), value.getArMetadata().get("frontAsset"))) {
+            value.setArMetadata(null);
+        }
         value.setStockQuantity(request.getStockQuantity());
         value.setCategory(require(categoryRepository, request.getCategoryId()));
         Seller seller = admin() ? require(sellerRepository, request.getSellerId()) : require(sellerRepository, sellerProfile().id());
@@ -208,9 +214,35 @@ public class PersistenceService {
         value.setPrice(request.getPrice());
         value.setImageUrl(request.getImageUrl());
         value.setArType(arType(request.getArType()));
+        if (request.getArMetadata() != null) {
+            validateArMetadata(request.getArMetadata(), value.getArType(), value.getImageUrl());
+            value.setArMetadata(request.getArMetadata());
+        } else if (value.getArMetadata() != null && !java.util.Objects.equals(value.getImageUrl(), value.getArMetadata().get("frontAsset"))) {
+            value.setArMetadata(null);
+        }
         value.setStockQuantity(request.getStockQuantity());
         value.setCategory(require(categoryRepository, request.getCategoryId()));
         return ProductResponse.from(productRepository.save(value));
+    }
+
+    private void validateArMetadata(java.util.Map<String, Object> metadata, String type, String image) {
+        try {
+            if (!java.util.Set.of("frontAsset", "leftTempleAsset", "rightTempleAsset", "style", "fitProfile").containsAll(metadata.keySet()))
+                throw new IllegalArgumentException("Unknown AR metadata field");
+            if (!java.util.Objects.equals(image, metadata.get("frontAsset")) || image == null)
+                throw new IllegalArgumentException("AR frontAsset must equal imageUrl");
+            for (String key : java.util.List.of("frontAsset", "leftTempleAsset", "rightTempleAsset")) if (metadata.containsKey(key)) {
+                if (!(metadata.get(key) instanceof String url) || !url.matches("(?i)(/(?!/)|https?://).+"))
+                    throw new IllegalArgumentException("AR assets must use public image URLs");
+                if (!key.equals("frontAsset") && !type.equals("EYEWEAR")) throw new IllegalArgumentException("Temple assets require EYEWEAR");
+            }
+            if (metadata.containsKey("style") && (!type.equals("NECKLACE") || !java.util.Set.of("CHOKER", "SHORT", "PENDANT").contains(metadata.get("style"))))
+                throw new IllegalArgumentException("Invalid necklace style");
+            if (metadata.containsKey("fitProfile")) {
+                if (!(metadata.get("fitProfile") instanceof java.util.Map<?, ?>)) throw new IllegalArgumentException("fitProfile must be an object");
+                ProductFitValidation.validate(type, (java.util.Map<String, Object>)metadata.get("fitProfile"));
+            }
+        } catch (IllegalArgumentException error) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, error.getMessage()); }
     }
 
     @Transactional(readOnly = true)
