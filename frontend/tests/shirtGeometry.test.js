@@ -701,12 +701,8 @@ test('accepted Pose measurement geometry and reviewed silhouette integration are
     );
 });
 
-test('eyewear geometry and product pixels stay byte-for-byte unchanged', () => {
+test('real eyewear product pixels stay byte-for-byte unchanged', () => {
   for (const [path, hash] of [
-    [
-      'src/components/tryon/faceGeometry.js',
-      '1d15c4465f386d002ad3aa75f5fc8fd77a41a3117198a44aea0d872fdbd2aa2e',
-    ],
     [
       'public/assets/face-ar/sunglasses/modern-clear-left-temple-normalized.png',
       'e0c67dd82682115d803335d0d885adf61b6f4f462defcb4fe4890c0d1e3ea48a',

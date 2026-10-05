@@ -1,7 +1,8 @@
+import { createEyewearRig, drawEyewearRig, rigidTempleMesh } from './eyewearRig.js';
 import { fallbackYawDegrees, normalizeYawDegrees } from './headPose.js';
 import { faceToCanvas } from './earTracking.js';
 import { templeImagePlacement } from './templeAssetGeometry.js';
-import { extractHeadSides, stableTemplePaths, templeQuad } from './templeGeometry.js';
+import { extractHeadSides, templeQuad } from './templeGeometry.js';
 
 export const defaultControls = () => ({
   auto: true,
@@ -25,11 +26,6 @@ export const trackingConfig = Object.freeze({
   movingBridgeSmoothingMs: 8,
   rollSmoothingMs: 40,
   yawSmoothingMs: 90,
-});
-
-export const yawConfig = Object.freeze({
-  maxFrontCompression: 0.03,
-  maxTempleLength: 0.6,
 });
 
 // Landmark-only fallback. Matrix orientation is applied by the tracking loop.
@@ -79,6 +75,17 @@ export function smoothAnchors(previous, next, elapsedMs) {
       y: old.y + positionAlpha * (anchor.y - old.y),
       width: old.width + scaleAlpha * (anchor.width - old.width),
       angle: old.angle + rollAlpha * delta,
+      ...(anchor.rawYawDegrees !== undefined
+        ? {
+            rawYawDegrees:
+              (old.rawYawDegrees ?? anchor.rawYawDegrees) +
+              yawAlpha * (anchor.rawYawDegrees - (old.rawYawDegrees ?? anchor.rawYawDegrees)),
+            pitchDegrees:
+              (old.pitchDegrees ?? anchor.pitchDegrees ?? 0) +
+              yawAlpha *
+                ((anchor.pitchDegrees ?? 0) - (old.pitchDegrees ?? anchor.pitchDegrees ?? 0)),
+          }
+        : {}),
       ...(anchor.yaw !== undefined
         ? {
             yaw: (old.yaw ?? anchor.yaw) + yawAlpha * (anchor.yaw - (old.yaw ?? anchor.yaw)),
@@ -119,7 +126,7 @@ export function faceAnchors(landmarks, width, height, kind, headPose) {
   const [left, right] = eyes;
   const center = mean(left, right);
   const distance = Math.hypot(right.x - left.x, right.y - left.y);
-  const angle = Math.atan2(right.y - left.y, right.x - left.x);
+  const angle = headPose?.rollRadians ?? Math.atan2(right.y - left.y, right.x - left.x);
   const sideA = point(234),
     sideB = point(454);
   const faceWidth = Math.hypot(sideB.x - sideA.x, sideB.y - sideA.y);
@@ -161,12 +168,19 @@ export function faceAnchors(landmarks, width, height, kind, headPose) {
         width: faceWidth,
         faceWidthPx: faceWidth,
         eyeDistancePx: eyeDistance,
-        angle,
+        angle: headPose?.rollRadians ?? angle,
+        cameraDistance: Math.max(4, (width * 1.2) / faceWidth),
         pivot: 0.5,
         yaw,
         rawYaw,
         templeSides,
         ...extractHeadSides(landmarks, width, height, bridge, angle, faceWidth),
+        faceSurface: Number.isFinite(landmarks[6].z)
+          ? landmarks.slice(0, 468).map((p) => ({
+              ...local({ x: p.x * width, y: p.y * height }),
+              z: ((p.z - landmarks[6].z) * width) / faceWidth,
+            }))
+          : null,
         ...(headPose || {}),
       },
     ];
@@ -269,111 +283,39 @@ export function drawAccessory(ctx, asset, anchors, controls, width, height, fit)
       bounds.width / bounds.height,
       fit,
     );
+    if (anchor.bridgeLocked || (asset.leftTemple && asset.rightTemple)) {
+      drawEyewearRig(ctx, asset, anchor, transform, fit);
+      ctx.restore();
+      return;
+    }
     const front = frontFrameGeometry(anchor, transform, fit);
     ctx.translate(transform.x, transform.y);
     ctx.rotate(transform.angle);
     ctx.globalAlpha = transform.opacity;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    const temples =
-      asset.leftTemple && asset.rightTemple ? glassesTemples(anchor, transform, fit, asset) : null;
-    const forced = anchor.templeDiagnostics?.forceVisible === true;
-    const clipping = !forced && anchor.templeDiagnostics?.clipping !== false;
-    const drawTemple = (temple) => {
-      const part = temple.side === -1 ? asset.leftTemple : asset.rightTemple;
-      ctx.save();
-      // A strict outward half-plane prevents ANY temple pixel entering a lens,
-      // including with roll, fit offsets, opacity, or extreme head turns.
-      if (clipping) {
-        ctx.beginPath();
-        ctx.rect(
-          temple.side < 0 ? temple.hingeX - transform.width * 2 : temple.hingeX,
-          -transform.height * 2,
-          transform.width * 2,
-          transform.height * 5,
-        );
-        ctx.clip();
-      }
-      const destination = templeDrawGeometry(temple, part);
-      if (
-        ![
-          destination.x,
-          destination.y,
-          destination.width,
-          destination.height,
-          temple.hingeX,
-          temple.hingeY,
-          temple.angle,
-        ].every(Number.isFinite) ||
-        destination.width <= 0 ||
-        destination.height <= 0
-      ) {
-        ctx.restore();
-        return;
-      }
-      ctx.globalAlpha = forced ? 1 : transform.opacity * temple.opacity;
-      // The restored projection stays outside the lens by construction/guard.
-      // A close-up face-contour mask erased the far hinge and sometimes the
-      // entire dandi; stable yaw length/alpha provide the far-side reduction.
-      ctx.translate(temple.hingeX, temple.hingeY);
-      ctx.rotate(temple.assetAngle);
-      const b = part.bounds;
-      ctx.drawImage(
-        part.image,
-        b.x,
-        b.y,
-        b.width,
-        b.height,
-        destination.x,
-        destination.y,
-        destination.width,
-        destination.height,
-      );
-      ctx.restore();
-    };
-    if (temples && !forced) drawTemple(temples[0]);
-    // One rigid front: preserve left/right lens proportions at every turn.
     ctx.drawImage(
       image,
       bounds.x,
       bounds.y,
       bounds.width,
       bounds.height,
-      -transform.width * front.frontScale * front.pivotX,
+      -transform.width * front.pivotX,
       -transform.height * front.pivotY,
-      transform.width * front.frontScale,
+      transform.width,
       transform.height,
     );
-    if (temples) {
-      if (forced) drawTemple(temples[0]);
-      drawTemple(temples[1]);
-    }
     ctx.restore();
   });
 }
 
-// Returned in painter's order: far temple, then (after the front) near temple.
+// Geometry is depth-ordered; the rigid renderer paints both rear planes before the front.
 // Hinge origins follow the projected front; arms never alter its bridge position.
 export function glassesTemples(anchor, transform, fit, asset) {
-  const paths = stableTemplePaths(anchor, transform, frontFrameGeometry(anchor, transform, fit));
-  if (!asset) return paths;
-  return paths.map((p) => {
-    const part = p.side < 0 ? asset.leftTemple : asset.rightTemple;
-    if (!part?.visibleHinge || !part?.visibleTip) return p;
-    const placement = templeImagePlacement(
-      p.length,
-      part.bounds,
-      part.visibleHinge,
-      part.visibleTip,
-    );
-    const dx = (part.visibleTip.x - part.visibleHinge.x) * placement.scale;
-    const dy = (part.visibleTip.y - part.visibleHinge.y) * placement.scale;
-    const vector = {
-      x: dx * Math.cos(p.assetAngle) - dy * Math.sin(p.assetAngle),
-      y: dx * Math.sin(p.assetAngle) + dy * Math.cos(p.assetAngle),
-    };
-    const target = { x: p.hingeX + vector.x, y: p.hingeY + vector.y };
-    return { ...p, vector, target, rawTarget: target, angle: Math.atan2(vector.y, vector.x) };
+  const rig = createEyewearRig(anchor, transform, fit);
+  return rig.temples.map((temple) => {
+    const part = temple.side < 0 ? asset?.leftTemple : asset?.rightTemple;
+    return part ? { ...temple, mesh: rigidTempleMesh(rig, temple, part) } : temple;
   });
 }
 
@@ -423,43 +365,7 @@ export function smoothTempleVisual(previous, next, elapsedMs) {
 }
 
 export function frontFrameGeometry(anchor, transform, fit = {}) {
-  const pivotX = anchor.bridgeLocked ? (fit.bridgePivot?.x ?? 0.5) : 0.5;
-  const pivotY = anchor.bridgeLocked ? (fit.bridgePivot?.y ?? 0.42) : anchor.pivot;
-  const yaw = anchor.bridgeLocked ? Math.max(-1, Math.min(1, anchor.yaw ?? 0)) : 0;
-  const frontScale = 1 - yawConfig.maxFrontCompression * yaw * yaw;
-  const leftScale = frontScale;
-  const rightScale = frontScale;
-  const localHinge = (x, y, scale) => ({
-    x: (x - pivotX) * transform.width * scale,
-    y: (y - pivotY) * transform.height,
-  });
-  const leftHinge = localHinge(
-    fit.hinges?.left?.x ?? 0.025,
-    fit.hinges?.left?.y ?? 0.22,
-    leftScale,
-  );
-  const rightHinge = localHinge(
-    fit.hinges?.right?.x ?? 0.975,
-    fit.hinges?.right?.y ?? 0.22,
-    rightScale,
-  );
-  const screen = (p) => ({
-    x: transform.x + p.x * Math.cos(transform.angle) - p.y * Math.sin(transform.angle),
-    y: transform.y + p.x * Math.sin(transform.angle) + p.y * Math.cos(transform.angle),
-  });
-  return {
-    pivotX,
-    pivotY,
-    frontScale,
-    leftScale,
-    rightScale,
-    leftWidth: transform.width * pivotX * leftScale,
-    rightWidth: transform.width * (1 - pivotX) * rightScale,
-    bridge: { x: transform.x, y: transform.y },
-    leftHinge,
-    rightHinge,
-    screenHinges: [screen(leftHinge), screen(rightHinge)],
-  };
+  return createEyewearRig(anchor, transform, fit).front;
 }
 
 export function eyewearDebugGeometry(asset, anchor, controls, width, height, fit) {
@@ -488,6 +394,8 @@ export function eyewearDebugGeometry(asset, anchor, controls, width, height, fit
     matrixYawDegrees: anchor.matrixYawDegrees ?? null,
     rawYawDegrees: anchor.rawYawDegrees ?? fallbackYawDegrees(anchor.rawYaw),
     held: anchor.held ?? false,
+    pitchDegrees: anchor.pitchDegrees ?? 0,
+    rollRadians: anchor.angle,
     frontScale: front.frontScale,
     temples:
       asset.leftTemple && asset.rightTemple
@@ -514,7 +422,7 @@ export function eyewearDebugGeometry(asset, anchor, controls, width, height, fit
               asset.bounds.width / asset.bounds.height,
               fit,
             );
-            const quad = templeQuad(temple, part, transform);
+            const quad = temple.mesh ?? templeQuad(temple, part, transform);
             const screen = (p) => ({
               x: transform.x + p.x * Math.cos(transform.angle) - p.y * Math.sin(transform.angle),
               y: transform.y + p.x * Math.sin(transform.angle) + p.y * Math.cos(transform.angle),
@@ -531,28 +439,13 @@ export function eyewearDebugGeometry(asset, anchor, controls, width, height, fit
               normalizedAssetAxisDegrees: part.normalizedAxisDegrees ?? 0,
               runtimeAngleDegrees: (temple.assetAngle * 180) / Math.PI,
               visibleProjectedLength: temple.length,
-              screenAxisEnd: screen({
-                x: temple.hingeX + temple.side * temple.length * Math.cos(temple.assetAngle),
-                y: temple.hingeY + temple.side * temple.length * Math.sin(temple.assetAngle),
-              }),
+              screenAxisEnd: screen(temple.target),
               screenControl: screen(quad.control),
               screenStrips: quad.strips.map((strip) => strip.map(screen)),
               screenRawEar: temple.ear?.raw ? faceToCanvas(temple.ear.raw, anchor) : null,
               asset: part.inspection,
-              effectiveOpacity: anchor.templeDiagnostics?.forceVisible
-                ? 1
-                : temple.opacity *
-                  accessoryTransform(
-                    anchor,
-                    controls,
-                    width,
-                    height,
-                    asset.bounds.width / asset.bounds.height,
-                    fit,
-                  ).opacity,
-              clipping:
-                !anchor.templeDiagnostics?.forceVisible &&
-                anchor.templeDiagnostics?.clipping !== false,
+              effectiveOpacity: temple.opacity * transform.opacity,
+              clipping: true,
             };
           })
         : [],

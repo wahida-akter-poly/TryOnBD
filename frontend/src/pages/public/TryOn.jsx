@@ -110,7 +110,7 @@ export default function TryOn() {
 function TryOnStudio({ product }) {
   const { state, identity, refreshAccount, addToCart, registerMedia, toast } = useApp();
   const [params, setParams] = useSearchParams();
-  const arDebug = false;
+  const arDebug = product.engine === 'sunglasses' && params.get('arDebug') === '1';
   const [adjustFit, setAdjustFit] = useState(false);
   const products = state.products.filter((p) => p.engine);
   const mode = modeFor(product),
@@ -558,7 +558,7 @@ function TryOnStudio({ product }) {
       </div>
     );
   }
-  if (isAR && !arDebug) {
+  if (isAR) {
     const trackingLabel = source?.composite
       ? 'Captured'
       : loadingPhoto

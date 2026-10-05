@@ -12,6 +12,119 @@ export const sunglassesStyles = [
     fallbackSrc: null,
     widthMultiplier: 0.92,
     bridgePivot: { x: 0.5, y: 0.42 },
+    // Apertures traced inside this supplied photo's real rims. Sample only
+    // unobstructed lens pixels; no replacement photograph or generated asset.
+    lensSurface: {
+      width: 1900,
+      height: 828,
+      opacity: 0.88,
+      apertures: [
+        {
+          samples: [
+            [590, 340],
+            [660, 470],
+            [540, 560],
+          ],
+          outline: [
+            [147, 309],
+            [159, 274],
+            [183, 235],
+            [218, 203],
+            [248, 184],
+            [316, 174],
+            [395, 168],
+            [490, 169],
+            [590, 179],
+            [679, 187],
+            [745, 199],
+            [777, 215],
+            [796, 242],
+            [813, 297],
+            [824, 360],
+            [826, 400],
+            [821, 439],
+            [802, 482],
+            [771, 537],
+            [741, 588],
+            [711, 631],
+            [681, 649],
+            [610, 660],
+            [533, 665],
+            [453, 663],
+            [375, 652],
+            [303, 633],
+            [237, 609],
+            [215, 593],
+            [194, 553],
+            [175, 508],
+            [160, 450],
+            [150, 390],
+          ],
+        },
+        {
+          samples: [
+            [1300, 340],
+            [1240, 470],
+            [1360, 560],
+          ],
+          outline: [
+            [1753, 309],
+            [1741, 274],
+            [1717, 235],
+            [1682, 203],
+            [1652, 184],
+            [1584, 174],
+            [1505, 168],
+            [1410, 169],
+            [1310, 179],
+            [1221, 187],
+            [1155, 199],
+            [1123, 215],
+            [1104, 242],
+            [1087, 297],
+            [1076, 360],
+            [1074, 400],
+            [1079, 439],
+            [1098, 482],
+            [1129, 537],
+            [1159, 588],
+            [1189, 631],
+            [1219, 649],
+            [1290, 660],
+            [1367, 665],
+            [1447, 663],
+            [1525, 652],
+            [1597, 633],
+            [1663, 609],
+            [1685, 593],
+            [1706, 553],
+            [1725, 508],
+            [1740, 450],
+            [1750, 390],
+          ],
+        },
+      ],
+      hardware: [
+        [
+          [797, 423],
+          [807, 414],
+          [819, 419],
+          [826, 430],
+          [820, 445],
+          [807, 453],
+          [797, 445],
+        ],
+        [
+          [1103, 423],
+          [1093, 414],
+          [1081, 419],
+          [1074, 430],
+          [1080, 445],
+          [1093, 453],
+          [1103, 445],
+        ],
+      ],
+    },
     // Aviator hinges sit beside the lens midline, below its upper double bar.
     hinges: { left: { x: 0.055, y: 0.4 }, right: { x: 0.945, y: 0.4 } },
   },
@@ -61,22 +174,54 @@ export const accessoryStyles = [
   ].map((style) => ({ ...style, overlayAsset: `/assets/face-ar/${style.id}.png` })),
 ];
 
+// Real product parts keyed by their front asset, never a database ID. Additional
+// photographed products can register parts and fit here without another engine
+// or database entity. imageUrl remains authoritative for the front texture.
+export const eyewearAssetManifests = Object.freeze(
+  Object.fromEntries(
+    sunglassesStyles
+      .filter((style) => style.src)
+      .map((style) => [
+        style.src,
+        Object.freeze({
+          leftTempleSrc: style.leftTempleSrc ?? null,
+          rightTempleSrc: style.rightTempleSrc ?? null,
+          fit: Object.freeze({
+            bridgePivot: style.bridgePivot,
+            hinges: style.hinges,
+            widthMultiplier: style.widthMultiplier,
+            verticalOffset: style.verticalOffset,
+            rotationOffset: style.rotationOffset,
+            opacity: style.opacity,
+            lensSurface: style.lensSurface,
+            templeDepth: 0.62,
+            templeSplay: 0.04,
+          }),
+        }),
+      ]),
+  ),
+);
+
 export function sunglassesAssetFor(product, style) {
-  const layered = product?.imageUrl === '/assets/face-ar/sunglasses/modern-clear-front-clean.png';
+  const src = product?.imageUrl;
+  // Cache query strings do not invalidate local part calibration. Unknown or
+  // external product URLs receive their own front only, without substitute arms.
+  const key = typeof src === 'string' && src.startsWith('/') ? src.split(/[?#]/)[0] : src;
+  const manifest = eyewearAssetManifests[key];
   return {
-    src: product?.imageUrl,
-    frontFrameSrc: product?.imageUrl,
-    leftTempleSrc: layered ? style.leftTempleSrc : null,
-    rightTempleSrc: layered ? style.rightTempleSrc : null,
+    src,
+    frontFrameSrc: src,
+    leftTempleSrc: manifest?.leftTempleSrc ?? null,
+    rightTempleSrc: manifest?.rightTempleSrc ?? null,
     fallbackSrc: null,
-    fit: {
-      bridgePivot: style.bridgePivot,
-      hinges: style.hinges,
-      widthMultiplier: style.widthMultiplier,
-      verticalOffset: style.verticalOffset,
-      rotationOffset: style.rotationOffset,
-      opacity: style.opacity,
+    fit: manifest?.fit ?? {
+      bridgePivot: style?.bridgePivot,
+      widthMultiplier: style?.widthMultiplier ?? 0.92,
+      verticalOffset: style?.verticalOffset ?? 0.03,
+      rotationOffset: 0,
+      opacity: 100,
     },
   };
 }
+
 export const supportsFaceAR = (product) => product?.engine === 'sunglasses';

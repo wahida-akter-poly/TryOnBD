@@ -1,7 +1,8 @@
-﻿import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { applyLensSurface } from './lensSurface.js';
+import { releaseEyewearRenderer } from './eyewearWebGL.js';
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { acquireFaceLandmarker } from '../../services/faceLandmarker';
 import { resolveHeadPose } from './headPose.js';
-import { useState } from 'react';
 import { acquirePoseLandmarker, poseIntervalMs } from '../../services/poseLandmarker.js';
 import { updateEarTracking, fuseEarAnchors } from './earTracking.js';
 import { loadAccessoryAsset, loadGlassesAssembly } from './accessoryAssets';
@@ -17,7 +18,6 @@ import {
   eyewearDebugGeometry,
   accessoryTransform,
   glassesTemples,
-  smoothTempleVisual,
 } from './faceGeometry';
 
 const copyCanvas = (canvas) => {
@@ -61,15 +61,10 @@ const CanvasPreview = forwardRef(function CanvasPreview(
   const render = useRef(() => {});
   const debugLayer = useRef(null);
   const debugPanel = useRef(null);
-  const [forceTemples, setForceTemples] = useState(false);
-  const [clipTemples, setClipTemples] = useState(true);
-  const templeDiagnosticOptions = useRef({});
-  templeDiagnosticOptions.current = arDebug
-    ? { forceVisible: forceTemples, clipping: clipTemples }
-    : {};
   useEffect(() => {
-    render.current();
-  }, [forceTemples, clipTemples]);
+    const target = canvas.current;
+    return () => releaseEyewearRenderer(target);
+  }, []);
   const reported = useRef({});
   const report = useRef(null);
   report.current = (patch) => {
@@ -101,7 +96,7 @@ const CanvasPreview = forwardRef(function CanvasPreview(
     )
       .then((loaded) => {
         if (!current) return;
-        asset.current = loaded;
+        asset.current = applyLensSurface(loaded, fit?.lensSurface);
         report.current({
           assetReady: true,
           assetNotice:
@@ -123,7 +118,7 @@ const CanvasPreview = forwardRef(function CanvasPreview(
     return () => {
       current = false;
     };
-  }, [overlay, leftTempleSrc, rightTempleSrc, kind, retry]);
+  }, [overlay, leftTempleSrc, rightTempleSrc, kind, retry, fit?.lensSurface]);
   useEffect(() => {
     frozen.current = null;
     wasAuto.current = true;
@@ -162,7 +157,6 @@ const CanvasPreview = forwardRef(function CanvasPreview(
     const earDetector =
       arDebug && source && trackingEnabled && !source.composite ? acquirePoseLandmarker() : null;
     let pose = null,
-      templeVisual = null,
       lastTempleRender = performance.now();
     delete window.__tryOnScaleDebug;
     delete window.__tryOnBridgeDebug;
@@ -252,7 +246,6 @@ const CanvasPreview = forwardRef(function CanvasPreview(
         const a = detected[0];
         if (arDebug && !source.live && !posePhotoDetected && !poseBusy && raw.current?.[0])
           void detectEars(performance.now());
-        a.templeDiagnostics = templeDiagnosticOptions.current;
         const transform = accessoryTransform(
           a,
           c,
@@ -280,17 +273,9 @@ const CanvasPreview = forwardRef(function CanvasPreview(
         // Pose remains diagnostic only. The visible PNG projection never reads
         // these anchors, so a weak/cropped ear cannot shrink the dandi.
         a.earDiagnostics = arDebug ? earAnchors : undefined;
-        const next = parts.map((p) => ({
-          side: p.side,
-          lengthRatio: p.length / transform.width,
-          opacity: p.opacity,
-        }));
-        templeVisual =
-          source.live && !a.templeDiagnostics.forceVisible
-            ? smoothTempleVisual(templeVisual, next, now - lastTempleRender)
-            : next;
+        // Every vertex follows the same filtered head pose; there are no
+        // independently filtered arm angles or lengths in the rigid renderer.
         lastTempleRender = now;
-        a.templeVisual = templeVisual;
       }
       if (c.auto) frozen.current = detected;
       else if (wasAuto.current || !frozen.current)
@@ -380,6 +365,9 @@ const CanvasPreview = forwardRef(function CanvasPreview(
             ),
             faceWidthPx: measured.width,
             posePerformance: earDetector?.metrics,
+            pipeline: target.dataset.eyewearRenderer,
+            pitchDegrees: measured.pitchDegrees,
+            rollRadians: measured.angle,
           };
         } else delete window.__tryOnBridgeDebug;
       }
@@ -460,7 +448,6 @@ const CanvasPreview = forwardRef(function CanvasPreview(
           if (!faceVisibility(now, lastSeen)) {
             smoothed.current = null;
             pose = null;
-            templeVisual = null;
             earTracks = null;
             earAnchors = null;
             earGeneration++;
@@ -473,8 +460,23 @@ const CanvasPreview = forwardRef(function CanvasPreview(
             options.current.kind,
           );
           if (raw.current?.[0] && options.current.kind === 'sunglasses') {
-            pose = resolveHeadPose(pose, found.matrix, raw.current[0].rawYaw, source.mirrored, now);
-            Object.assign(raw.current[0], pose);
+            pose = resolveHeadPose(
+              pose,
+              found.matrix,
+              raw.current[0].rawYaw,
+              source.mirrored,
+              now,
+              raw.current[0].angle,
+            );
+            // Normalize the occluder and all anchors against the same matrix
+            // roll used by the rigid object, including video/selfie input.
+            raw.current = faceAnchors(
+              landmarks.current,
+              target.width,
+              target.height,
+              options.current.kind,
+              pose,
+            );
           }
           if (!smoothed.current) smoothed.current = raw.current;
           if (!source.live) await detectEars(now);
@@ -614,40 +616,6 @@ const CanvasPreview = forwardRef(function CanvasPreview(
           {Array.from({ length: 7 }, (_, line) => (
             <div key={line} data-pose-line={line} />
           ))}
-        </div>
-      )}
-      {arDebug && kind === 'sunglasses' && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 8,
-            left: 8,
-            zIndex: 2,
-            background: '#10231fee',
-            color: 'white',
-            padding: 8,
-            fontSize: 12,
-          }}
-        >
-          <label>
-            <input
-              type="checkbox"
-              aria-label="Force temple visibility"
-              checked={forceTemples}
-              onChange={(event) => setForceTemples(event.target.checked)}
-            />{' '}
-            Force real temples visible
-          </label>
-          <label style={{ marginLeft: 12 }}>
-            <input
-              type="checkbox"
-              aria-label="Enable temple clipping"
-              checked={clipTemples}
-              disabled={forceTemples}
-              onChange={(event) => setClipTemples(event.target.checked)}
-            />{' '}
-            Temple clipping
-          </label>
         </div>
       )}
     </>

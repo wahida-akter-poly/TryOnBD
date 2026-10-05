@@ -1,9 +1,3 @@
-import { templeImagePlacement } from './templeAssetGeometry.js';
-
-// Small independent runtime offsets; the PNG's PCA rotation is already removed.
-export const leftBaseAngleOffset = -1;
-export const rightBaseAngleOffset = 1;
-
 // Consecutive lateral FACE_OVAL vertices, verified against MediaPipe's
 // face_landmarks_connections.ts: 127 -> 234 -> 93 and 356 -> 454 -> 323.
 // These are temple/cheek-outline proxies, not anatomical ear landmarks.
@@ -17,77 +11,6 @@ export const faceOvalLandmarks = [
 ];
 const finitePoint = (p) => p && Number.isFinite(p.x) && Number.isFinite(p.y);
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-
-// Screen projection only: the real arm points mostly into depth at frontal yaw.
-// Use the existing resolved (mirror-corrected, guarded) matrix yaw. The inverse
-// normalized yaw is only for callers without head-pose degree metadata.
-export function templeProjection(anchor) {
-  const yaw = clamp(anchor.yaw ?? 0, -1, 1);
-  const degrees = Number.isFinite(anchor.rawYawDegrees)
-    ? anchor.rawYawDegrees
-    : Math.sign(yaw) * (3 + Math.abs(yaw) * 72);
-  const absYaw = Math.abs(degrees);
-  const t = clamp((absYaw - 3) / 21, 0, 1);
-  const turnT = t * t * (3 - 2 * t);
-  const frontal = absYaw <= 3;
-  return { absYaw, turnT, frontal, nearSide: frontal ? 1 : degrees > 0 ? -1 : 1 };
-}
-
-// Only the rendered frame and existing yaw drive this projection. Pose ears
-// and contour proxies cannot redirect an arm. Coordinates follow frame roll.
-export function stableTemplePaths(anchor, transform, front) {
-  const yaw = clamp(anchor.yaw ?? 0, -1, 1);
-  const turn = Math.abs(yaw);
-  const strong = clamp((turn - 0.42) / 0.58, 0, 1);
-  const { absYaw, turnT, frontal, nearSide } = templeProjection(anchor);
-  return [-nearSide, nearSide].map((side, i) => {
-    const near = i === 1;
-    const hinge = side < 0 ? front.leftHinge : front.rightHinge;
-    const visual = anchor.templeVisual?.find((p) => p.side === side);
-    const forced = !!anchor.templeDiagnostics?.forceVisible;
-    const ratio = forced
-      ? 0.4
-      : clamp(visual?.lengthRatio ?? 0.15 + (near ? 0.425 : 0.16) * turnT, 0.15, 0.575);
-    const length = transform.width * ratio;
-    // A small downward/backward inclination in frame space; canvas roll is
-    // applied by the existing parent transform, once.
-    const baseAngleOffset = side < 0 ? leftBaseAngleOffset : rightBaseAngleOffset;
-    const assetAngle = forced
-      ? 0
-      : ((baseAngleOffset + side * turnT * (near ? 2 : 0.5)) * Math.PI) / 180;
-    const tilt = side * assetAngle;
-    const vector = { x: side * length * Math.cos(tilt), y: length * Math.sin(tilt) };
-    const opacity = forced
-      ? 1
-      : (visual?.opacity ?? (near ? 0.9 + 0.04 * turnT : (0.9 - 0.3 * turnT) * (1 - strong)));
-    const target = { x: hinge.x + vector.x, y: hinge.y + vector.y };
-    return {
-      renderer: 'STABLE_PNG',
-      side,
-      near,
-      state: frontal ? 'frontal' : near ? 'near' : 'far',
-      absYaw,
-      turnT,
-      projectedLengthRatio: ratio,
-      forced,
-      hingeX: hinge.x,
-      hingeY: hinge.y,
-      vector,
-      target,
-      rawTarget: target,
-      length,
-      physicalLength: length,
-      angle: Math.atan2(vector.y, vector.x),
-      assetAngle,
-      baseAngleOffset,
-      opacity,
-      thicknessScale: 1,
-      targetTaper: 1,
-      curvature: 0,
-      ear: anchor.earDiagnostics?.find((p) => p.side === side),
-    };
-  });
-}
 
 export function extractHeadSides(landmarks, width, height, bridge, roll, faceWidth) {
   const local = (p) => ({
@@ -257,42 +180,6 @@ export function hingeToHeadPaths(anchor, transform, front) {
 // and physical path depth, with safety limits rather than a free fat ribbon.
 export function templeQuad(temple, part, transform) {
   const pivot = part.hingePivot || { x: temple.side < 0 ? 1 : 0, y: 0.14 };
-  if (temple.renderer === 'STABLE_PNG') {
-    // Diagnostic corners match the rigid, uniformly scaled PNG actually drawn.
-    const placement =
-      part.visibleHinge && part.visibleTip
-        ? templeImagePlacement(temple.length, part.bounds, part.visibleHinge, part.visibleTip)
-        : null;
-    const height = placement?.height ?? (temple.length * part.bounds.height) / part.bounds.width;
-    const width = placement?.width ?? temple.length;
-    const rotate = (x, y) => ({
-      x: temple.hingeX + x * Math.cos(temple.assetAngle) - y * Math.sin(temple.assetAngle),
-      y: temple.hingeY + x * Math.sin(temple.assetAngle) + y * Math.cos(temple.assetAngle),
-    });
-    const left = placement?.x ?? -width * pivot.x,
-      top = placement?.y ?? -height * pivot.y;
-    const corners = [
-      rotate(left, top),
-      rotate(left + width, top),
-      rotate(left + width, top + height),
-      rotate(left, top + height),
-    ];
-    const [tl, tr, br, bl] = corners;
-    return {
-      corners,
-      strips: [[tl, tr, br, bl]],
-      height,
-      hingePivot: pivot,
-      hingeTop: pivot.x === 1 ? tr : tl,
-      hingeBottom: pivot.x === 1 ? br : bl,
-      targetTop: pivot.x === 1 ? tl : tr,
-      targetBottom: pivot.x === 1 ? bl : br,
-      control: {
-        x: (temple.hingeX + temple.target.x) / 2,
-        y: (temple.hingeY + temple.target.y) / 2,
-      },
-    };
-  }
   const height = temple.forced
     ? (temple.length * part.bounds.height) / part.bounds.width
     : clamp(

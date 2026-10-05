@@ -11,7 +11,7 @@ export const headPoseConfig = Object.freeze({
   maxSpeedDegreesPerSecond: 240,
 });
 
-export function matrixYawDegrees(matrix) {
+export function matrixOrientation(matrix) {
   if (matrix?.rows !== 4 || matrix?.columns !== 4 || matrix.data?.length !== 16) return null;
   const m = matrix.data;
   if (!Array.from(m).every(Number.isFinite)) return null;
@@ -34,7 +34,15 @@ export function matrixYawDegrees(matrix) {
   // R = Rz(roll) Ry(yaw) Rx(pitch). Its first column is
   // [cos(roll)cos(yaw), sin(roll)cos(yaw), -sin(yaw)].
   // atan2 removes uniform scale and is independent of roll and pitch.
-  return (Math.atan2(-x[2], Math.hypot(x[0], x[1])) * 180) / Math.PI;
+  return {
+    yawDegrees: (Math.atan2(-x[2], Math.hypot(x[0], x[1])) * 180) / Math.PI,
+    pitchDegrees: (Math.atan2(y[2], z[2]) * 180) / Math.PI,
+    rollRadians: -Math.atan2(x[1], x[0]),
+  };
+}
+
+export function matrixYawDegrees(matrix) {
+  return matrixOrientation(matrix)?.yawDegrees ?? null;
 }
 
 export function normalizeYawDegrees(degrees) {
@@ -53,29 +61,56 @@ export function fallbackYawDegrees(raw) {
   return Number.isFinite(raw) ? (Math.atan(raw) * 180) / Math.PI : null;
 }
 
-export function resolveHeadPose(previous, matrix, fallbackRaw, mirrored, now) {
-  const matrixDegrees = matrixYawDegrees(matrix);
+export function resolveHeadPose(
+  previous,
+  matrix,
+  fallbackRaw,
+  mirrored,
+  now,
+  fallbackRollRadians = 0,
+) {
+  const orientation = matrixOrientation(matrix);
+  const matrixDegrees = orientation?.yawDegrees ?? null;
   const candidate =
     matrixDegrees === null ? fallbackYawDegrees(fallbackRaw) : matrixDegrees * (mirrored ? -1 : 1);
   const source = matrixDegrees === null ? 'FALLBACK' : 'MATRIX';
   const valid = Number.isFinite(candidate);
   let degrees = valid ? candidate : 0;
   let held = false;
+  let pitch = orientation?.pitchDegrees ?? 0;
+  let roll = orientation ? orientation.rollRadians * (mirrored ? -1 : 1) : fallbackRollRadians;
+  let pendingSince = null;
+  const rollDelta = previous
+    ? Math.atan2(
+        Math.sin(roll - (previous.rollRadians ?? roll)),
+        Math.cos(roll - (previous.rollRadians ?? roll)),
+      )
+    : 0;
+  const jump = previous
+    ? Math.max(
+        Math.abs(candidate - previous.rawYawDegrees),
+        Math.abs(pitch - (previous.pitchDegrees ?? pitch)),
+        (Math.abs(rollDelta) * 180) / Math.PI,
+      )
+    : 0;
   let lastValidAt = valid ? now : (previous?.lastValidAt ?? -Infinity);
   const elapsed = previous ? Math.max(0, now - previous.sampledAt) : 0;
   if (
     previous &&
     (!valid ||
-      Math.abs(candidate - previous.rawYawDegrees) >
+      jump >
         Math.max(
           headPoseConfig.maxJumpDegrees,
           (elapsed * headPoseConfig.maxSpeedDegreesPerSecond) / 1000,
         ))
   ) {
-    if (now - previous.lastValidAt <= headPoseConfig.invalidHoldMs) {
+    pendingSince = previous.pendingSince ?? previous.lastValidAt;
+    if (now - pendingSince <= headPoseConfig.invalidHoldMs) {
       degrees = previous.rawYawDegrees;
       lastValidAt = previous.lastValidAt;
       held = true;
+      pitch = previous.pitchDegrees ?? pitch;
+      roll = previous.rollRadians ?? roll;
     } else if (valid) {
       // A sustained new pose is accepted at a bounded angular velocity.
       const step = Math.max(1, (elapsed * headPoseConfig.maxSpeedDegreesPerSecond) / 1000);
@@ -83,10 +118,20 @@ export function resolveHeadPose(previous, matrix, fallbackRaw, mirrored, now) {
         previous.rawYawDegrees +
         Math.sign(candidate - previous.rawYawDegrees) *
           Math.min(Math.abs(candidate - previous.rawYawDegrees), step);
+      const pitchDelta = pitch - (previous.pitchDegrees ?? pitch);
+      pitch =
+        (previous.pitchDegrees ?? pitch) +
+        Math.sign(pitchDelta) * Math.min(Math.abs(pitchDelta), step);
+      roll =
+        (previous.rollRadians ?? roll) +
+        Math.sign(rollDelta) * Math.min(Math.abs(rollDelta), (step * Math.PI) / 180);
     }
   }
   return {
     rawYawDegrees: degrees,
+    pitchDegrees: pitch,
+    rollRadians: roll,
+    pendingSince,
     yaw: normalizeYawDegrees(degrees),
     yawSource: held ? previous.yawSource : source,
     matrixYawDegrees: matrixDegrees,

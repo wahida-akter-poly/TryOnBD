@@ -124,3 +124,7 @@ git push -u origin feature/backend-driven-production-ui
 ## Real necklace integration (5 October 2026)
 
 See [NECKLACE_FLOW.md](NECKLACE_FLOW.md) for the actual asset, PostgreSQL IDs, repeatable import, business values requiring review, ownership fix, and live MediaPipe verification.
+
+## Eyewear update (5 October 2026)
+
+The real PNG eyewear assembly now uses shared 3D pose/projection, WebGL face-depth occlusion and a Canvas fallback. Product image URLs, body engines and backend flows remain intact. See [eyewear pipeline, acceptance evidence, changed files and startup commands](EYEWEAR_TRACKING.md).

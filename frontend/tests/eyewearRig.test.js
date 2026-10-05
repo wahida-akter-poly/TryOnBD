@@ -1,0 +1,320 @@
+import { sampleLensTint } from '../src/components/tryon/lensSurface.js';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  createEyewearRig,
+  rigidTempleMesh,
+  drawEyewearRig,
+} from '../src/components/tryon/eyewearRig.js';
+import { matrixOrientation, resolveHeadPose } from '../src/components/tryon/headPose.js';
+import {
+  smoothAnchors,
+  faceVisibility,
+  accessoryTransform,
+  defaultControls,
+} from '../src/components/tryon/faceGeometry.js';
+import { modernClearTempleCalibration } from '../src/data/modernClearTempleCalibration.js';
+import { accessoryStyles, sunglassesAssetFor } from '../src/data/faceAccessories.js';
+
+const fit = accessoryStyles.find((s) => s.id === 'clear');
+const anchor = {
+  x: 500,
+  y: 240,
+  width: 300,
+  angle: 0,
+  bridgeLocked: true,
+  rawYawDegrees: 0,
+  pitchDegrees: 0,
+  cameraDistance: 5,
+};
+const transform = { x: 500, y: 240, width: 276, height: 97, angle: 0, opacity: 1 };
+const close = (a, b, tolerance = 1e-8) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
+function matrix(yaw, pitch = 0, roll = 0) {
+  const y = (yaw * Math.PI) / 180,
+    p = (pitch * Math.PI) / 180,
+    r = (roll * Math.PI) / 180;
+  const c = Math.cos,
+    s = Math.sin;
+  // Independent Rz Ry Rx, column-major (MediaPipe y-up/z-toward).
+  return {
+    rows: 4,
+    columns: 4,
+    data: [
+      c(r) * c(y),
+      s(r) * c(y),
+      -s(y),
+      0,
+      c(r) * s(y) * s(p) - s(r) * c(p),
+      s(r) * s(y) * s(p) + c(r) * c(p),
+      c(y) * s(p),
+      0,
+      c(r) * s(y) * c(p) + s(r) * s(p),
+      s(r) * s(y) * c(p) - c(r) * s(p),
+      c(y) * c(p),
+      0,
+      8,
+      -3,
+      -40,
+      1,
+    ],
+  };
+}
+function part(side) {
+  const g = modernClearTempleCalibration[`modern-clear-${side}-temple-normalized.png`].normalized;
+  return {
+    image: side,
+    bounds: g.bounds,
+    visibleHinge: g.hinge,
+    visibleTip: g.tip,
+    hingePivot: g.hingePivot,
+  };
+}
+
+for (const degrees of [0, -15, 15, -30, 30, -55, 55]) {
+  test(`rigid hinges stay attached with yaw ${degrees}, pitch, scale, roll and fit offsets`, () => {
+    for (const pitch of [-20, 0, 20])
+      for (const scale of [0.6, 1, 1.8]) {
+        const a = { ...anchor, rawYawDegrees: degrees, pitchDegrees: pitch };
+        const t = {
+          ...transform,
+          width: transform.width * scale,
+          height: transform.height * scale,
+          angle: 0.3,
+        };
+        const rig = createEyewearRig(a, t, fit);
+        for (const temple of rig.temples) {
+          const h = temple.side < 0 ? rig.front.leftHinge : rig.front.rightHinge;
+          const mesh = rigidTempleMesh(rig, temple, part(temple.side < 0 ? 'left' : 'right'));
+          close(mesh.hinge.x, h.x);
+          close(mesh.hinge.y, h.y);
+          close(mesh.hinge.depth, h.depth);
+          close(temple.hingeX, h.x);
+          close(temple.hingeY, h.y);
+          assert.equal(temple.renderer, 'RIGID_3D');
+          assert.ok(
+            mesh.strips
+              .flat()
+              .every((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && p.perspective > 0),
+          );
+        }
+        assert.deepEqual(rig.front.bridge, { x: t.x, y: t.y });
+      }
+  });
+}
+
+test('frontal and near-frontal shafts point backward with a short tucked projection on both sides', () => {
+  for (let yaw = -3; yaw <= 3; yaw++) {
+    const rig = createEyewearRig({ ...anchor, rawYawDegrees: yaw }, transform, fit);
+    for (const t of rig.temples) {
+      assert.ok(t.target.depth > t.hingeDepth + 0.5);
+      assert.ok(t.projectedLengthRatio < 0.06, `${yaw}: open wing ${t.projectedLengthRatio}`);
+      close(t.physicalLength / rig.physicalWidth, 0.62);
+    }
+  }
+});
+
+test('moderate yaw projects near shaft toward the head side, far shaft behind lenses, without opening either hinge', () => {
+  for (const yaw of [-35, -25, -15, 15, 25, 35]) {
+    const rig = createEyewearRig({ ...anchor, rawYawDegrees: yaw }, transform, fit);
+    const [far, near] = rig.temples;
+    assert.ok(near.vector.x * near.side > 0);
+    assert.ok(far.vector.x * far.side < 0); // hidden by the lens/face guard
+    assert.ok(near.opacity > far.opacity);
+    close(near.physicalLength, far.physicalLength);
+    const localNear = rig.templePoint(near.side, 1),
+      localFar = rig.templePoint(far.side, 1);
+    close(localNear.z, localFar.z);
+    close(localNear.x, -localFar.x);
+    assert.ok(near.projectedLengthRatio < 0.5);
+  }
+});
+
+test('all vertices use matrix pitch, yaw and roll; mirroring is applied once', () => {
+  const m = matrix(25, 18, -12),
+    o = matrixOrientation(m);
+  close(o.yawDegrees, 25);
+  close(o.pitchDegrees, 18);
+  close(o.rollRadians, (12 * Math.PI) / 180);
+  const a = resolveHeadPose(null, m, 0, false, 0),
+    b = resolveHeadPose(null, m, 0, true, 0);
+  close(a.rawYawDegrees, -b.rawYawDegrees);
+  close(a.pitchDegrees, b.pitchDegrees);
+  close(a.rollRadians, -b.rollRadians);
+  const flat = createEyewearRig(anchor, transform, fit);
+  const pitched = createEyewearRig({ ...anchor, ...a }, transform, fit);
+  assert.ok(Math.abs(pitched.temples[1].target.y - flat.temples[1].target.y) > 20);
+});
+
+test('head movement changes projection continuously without independently rotating arms', () => {
+  let previous;
+  for (let yaw = -40; yaw <= 40; yaw += 0.25) {
+    const rig = createEyewearRig({ ...anchor, rawYawDegrees: yaw }, transform, fit);
+    if (previous)
+      for (const t of rig.temples) {
+        const old = previous.temples.find((p) => p.side === t.side);
+        assert.ok(Math.hypot(t.target.x - old.target.x, t.target.y - old.target.y) < 2);
+        close(rig.templePoint(t.side, 1).z, previous.templePoint(t.side, 1).z);
+      }
+    previous = rig;
+  }
+});
+
+test('perspective affects front and shafts together while the bridge stays fixed', () => {
+  const rig = createEyewearRig({ ...anchor, rawYawDegrees: 30 }, transform, fit);
+  assert.notEqual(rig.front.leftHinge.perspective, rig.front.rightHinge.perspective);
+  close(rig.project({ x: 0, y: 0, z: 0 }).x, 0);
+  close(rig.project({ x: 0, y: 0, z: 0 }).y, 0);
+  const smaller = createEyewearRig(
+    { ...anchor, rawYawDegrees: 30 },
+    { ...transform, width: 138, height: 48.5 },
+    fit,
+  );
+  close(rig.temples[1].target.x, smaller.temples[1].target.x * 2);
+});
+
+test('orientation EMA filters actual degrees and pitch before every part is projected', () => {
+  const old = { ...anchor, yaw: 0 },
+    next = { ...old, rawYawDegrees: 30, pitchDegrees: 20, yaw: 0.3 };
+  const a = smoothAnchors([old], [next], 16)[0];
+  assert.ok(a.rawYawDegrees > 0 && a.rawYawDegrees < 8);
+  assert.ok(a.pitchDegrees > 0 && a.pitchDegrees < 5);
+  let v = [old];
+  for (let i = 0; i < 30; i++) v = smoothAnchors(v, [next], 16);
+  close(v[0].rawYawDegrees, 30, 0.2);
+  const rig = createEyewearRig(a, transform, fit);
+  close(rig.yawDegrees, a.rawYawDegrees);
+  assert.deepEqual(
+    rig.temples.map((t) => t.renderer),
+    ['RIGID_3D', 'RIGID_3D'],
+  );
+});
+
+test('invalid matrix falls back to landmarks and lost tracking still holds then fades', () => {
+  const p = resolveHeadPose(
+    null,
+    { rows: 4, columns: 4, data: Array(16).fill(NaN) },
+    0.3,
+    false,
+    0,
+    0.1,
+  );
+  assert.equal(p.yawSource, 'FALLBACK');
+  close(p.rollRadians, 0.1);
+  close(p.pitchDegrees, 0);
+  assert.ok(
+    Number.isFinite(createEyewearRig({ ...anchor, ...p }, transform, fit).temples[0].target.x),
+  );
+  assert.equal(faceVisibility(140, 0), 1);
+  assert.ok(faceVisibility(200, 0) < 1);
+  assert.equal(faceVisibility(300, 0), 0);
+});
+
+test('head masks and lens guards enclose rear drawing and both temples are painted before the front', () => {
+  const calls = [],
+    clips = [];
+  const ctx = {
+    save() {},
+    restore() {},
+    translate() {},
+    rotate() {},
+    beginPath() {},
+    rect() {},
+    moveTo() {},
+    lineTo() {},
+    closePath() {},
+    clip(rule) {
+      clips.push(rule);
+    },
+    transform() {},
+    drawImage(img) {
+      calls.push(img);
+    },
+  };
+  const a = {
+    ...anchor,
+    rawYawDegrees: 25,
+    headContour: [
+      { x: -0.5, y: -0.5 },
+      { x: 0.5, y: -0.5 },
+      { x: 0.5, y: 0.7 },
+      { x: -0.5, y: 0.7 },
+    ],
+  };
+  const asset = {
+    image: 'front',
+    bounds: { x: 0, y: 0, width: 944, height: 333 },
+    leftTemple: part('left'),
+    rightTemple: part('right'),
+  };
+  drawEyewearRig(ctx, asset, a, transform, fit);
+  assert.ok(clips.filter((c) => c === 'evenodd').length === 1);
+  const firstFront = calls.indexOf('front');
+  assert.ok(firstFront > 0);
+  assert.ok(calls.slice(firstFront).every((c) => c === 'front'));
+  assert.ok(calls.slice(0, firstFront).includes('left'));
+  assert.ok(calls.slice(0, firstFront).includes('right'));
+});
+
+test('several backend products reuse the same rig and dynamic real front image without creating substitute arms', () => {
+  const items = [
+    { id: 2, imageUrl: fit.src },
+    { id: 300, imageUrl: fit.src },
+    { id: 3, imageUrl: '/assets/face-ar/sunglasses/aviator-real.png' },
+    { id: 777, imageUrl: 'https://store.example/real-frame.png' },
+  ];
+  for (const p of items) {
+    const asset = sunglassesAssetFor(p, fit);
+    assert.equal(asset.src, p.imageUrl);
+    assert.equal(asset.frontFrameSrc, p.imageUrl);
+    if (p.imageUrl !== fit.src) {
+      assert.equal(asset.leftTempleSrc, null);
+      assert.equal(asset.rightTempleSrc, null);
+    }
+    const t = accessoryTransform(anchor, defaultControls(), 1000, 750, 2.85, asset.fit);
+    assert.ok(createEyewearRig(anchor, t, asset.fit).front.mesh.strips.length > 1);
+  }
+});
+
+test('pitch and roll spikes are held with yaw; a sustained new orientation recovers without repeated holds', () => {
+  const initial = resolveHeadPose(null, matrix(0), 0, false, 0);
+  const spike = resolveHeadPose(initial, matrix(0, 55, 70), 0, false, 33);
+  assert.equal(spike.held, true);
+  close(spike.pitchDegrees, 0);
+  close(spike.rollRadians, 0);
+  const returned = resolveHeadPose(spike, matrix(1, 1, 1), 0, false, 66);
+  assert.equal(returned.held, false);
+  let pose = resolveHeadPose(returned, matrix(60, 35, 40), 0, false, 270);
+  const accepted = pose.rawYawDegrees;
+  pose = resolveHeadPose(pose, matrix(60, 35, 40), 0, false, 303);
+  assert.equal(pose.held, false);
+  assert.ok(pose.rawYawDegrees > accepted);
+});
+
+test('real asset manifest calibration is independent of database ID, style guesses and cache query strings', () => {
+  const p = { id: 989, imageUrl: fit.src + '?v=2' };
+  const a = sunglassesAssetFor(p, accessoryStyles[0]);
+  assert.equal(a.frontFrameSrc, p.imageUrl);
+  assert.equal(a.leftTempleSrc, fit.leftTempleSrc);
+  assert.deepEqual(a.fit.bridgePivot, fit.bridgePivot);
+});
+
+test('lens material samples the real photograph and rejects transparent samples', () => {
+  const pixels = new Uint8ClampedArray(12 * 12 * 4);
+  for (let i = 0; i < pixels.length; i += 4) pixels.set([80, 82, 60, 255], i);
+  // A small dark obstruction cannot change the robust real tint measurement.
+  pixels.set([10, 8, 6, 255], (6 * 12 + 6) * 4);
+  assert.deepEqual(sampleLensTint(pixels, 12, 12, [[6, 6]]), [80, 82, 60, 255]);
+  assert.throws(
+    () => sampleLensTint(new Uint8ClampedArray(12 * 12 * 4), 12, 12, [[6, 6]]),
+    /visible product pixels/,
+  );
+});
+
+test('Aviator lens calibration stays product-asset driven and has no invented temple assets', () => {
+  const style = accessoryStyles.find((s) => s.id === 'aviator');
+  const config = sunglassesAssetFor({ id: 2020, imageUrl: style.src }, fit);
+  assert.equal(config.src, style.src);
+  assert.equal(config.leftTempleSrc, null);
+  assert.equal(config.fit.lensSurface.width, 1900);
+  assert.equal(config.fit.lensSurface.apertures.length, 2);
+});
