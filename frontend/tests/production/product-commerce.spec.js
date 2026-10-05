@@ -110,3 +110,21 @@ for (const role of ['SELLER', 'ADMIN', 'SUPER_ADMIN'])
       arType: 'NECKLACE',
     });
   });
+
+test('existing management form retains the imported CLOTHING alias', async ({ page }) => {
+  await setup(page, 'SELLER');
+  const garment = {
+    ...product,
+    arType: 'CLOTHING',
+    imageUrl: '/assets/body-ar/shirts/tshirt-black-front.png',
+    arMetadata: null,
+  };
+  await page.route('**/api/account/products', (route) => route.fulfill({ json: [garment] }));
+  await page.goto('/dashboard/seller/products');
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(page.getByLabel('AR type', { exact: true })).toHaveValue('CLOTHING');
+  for (const type of ['SHIRT', 'TSHIRT', 'CLOTHING']) {
+    await page.getByLabel('AR type', { exact: true }).selectOption(type);
+    await expect(page.getByLabel('AR type', { exact: true })).toHaveValue(type);
+  }
+});

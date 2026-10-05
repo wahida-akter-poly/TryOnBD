@@ -329,7 +329,7 @@ function ManagementForm({ section, record, categories, sellers, seller, busy, ca
           <label>
             AR type
             <select aria-label="AR type" value={form.arType} onChange={change('arType')}>
-              {['NONE', 'EYEWEAR', 'SHIRT', 'TSHIRT', 'NECKLACE'].map((type) => (
+              {['NONE', 'EYEWEAR', 'SHIRT', 'TSHIRT', 'CLOTHING', 'NECKLACE'].map((type) => (
                 <option key={type}>{type}</option>
               ))}
             </select>
