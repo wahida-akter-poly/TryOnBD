@@ -92,3 +92,7 @@ Final validation results (5 October 2026):
 Local ignored artifacts: `frontend/artifacts/real-necklace-live.png`, `frontend/artifacts/real-necklace-capture.png`, `frontend/artifacts/necklace-unit-tests.log`. The real capture was visually reviewed and the initial low chest placement corrected in the renderer without editing tracking geometry.
 
 The implementation is committed on the requested branch. GitHub authentication is absent in this session; the final chat report records the commit hash and push outcome. No prior commit was rewritten, no merge was performed, and the original dirty worktree was not modified.
+
+## Hybrid neck tracking
+
+The necklace engine now fuses pose nose/mouth references with shoulders and supports CHOKER, SHORT and PENDANT calibration derived from product metadata. See [NECKLACE_TRACKING.md](NECKLACE_TRACKING.md) for current tracking, fallback behavior and the next three real asset requirements. The preceding validation results describe the catalog integration checkpoint.

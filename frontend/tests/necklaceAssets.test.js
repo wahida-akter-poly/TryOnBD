@@ -20,17 +20,17 @@ test('different product aspect ratios retain proportions using shoulder width', 
   assert.equal(wide.x, -120);
   assert.equal(wide.width, 240);
   assert.equal(wide.height, 120);
-  assert.ok(Math.abs(wide.y + 166.8) < 1e-9);
+  assert.ok(Math.abs(wide.y + 28.8) < 1e-9);
   const tall = necklaceDrawRect({ width: 100, height: 100 }, { width: 240, shoulderWidth: 300 });
   assert.equal(tall.height, 240);
   assert.equal(tall.width, 240);
 });
 
-test('visible necklace anchor tracks the neck without changing the shoulder geometry', () => {
+test('renderer uses measured neck placement without applying a second shoulder offset', () => {
   const geometry = { width: 216, shoulderWidth: 300, center: { x: 320, y: 350 } };
   const before = structuredClone(geometry);
   const rect = necklaceDrawRect({ width: 1200, height: 600 }, geometry);
-  assert.ok(Math.abs(rect.y - (-108 * 0.24 - 138)) < 1e-9);
+  assert.ok(Math.abs(rect.y - -108 * 0.24) < 1e-9);
   assert.deepEqual(geometry, before);
   const scaled = necklaceDrawRect({ width: 1200, height: 600 }, { width: 432, shoulderWidth: 600 });
   assert.equal(scaled.y, rect.y * 2);

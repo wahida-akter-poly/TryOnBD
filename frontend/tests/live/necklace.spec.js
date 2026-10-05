@@ -52,6 +52,14 @@ test('live PostgreSQL necklace catalog, details, MediaPipe photo and export', as
     .getByLabel('Upload photo', { exact: true })
     .setInputFiles('tests/fixtures/shirt-hands-on-hips.jpg');
   await expect(page.getByText('Pose detected', { exact: true })).toBeVisible({ timeout: 60000 });
+  await expect(page.getByLabel('Necklace try-on canvas')).toHaveAttribute(
+    'data-neck-anchor',
+    'pose-head',
+  );
+  await expect(page.getByLabel('Necklace try-on canvas')).toHaveAttribute(
+    'data-necklace-style',
+    'SHORT',
+  );
   await mkdir('artifacts', { recursive: true });
   await page.screenshot({ path: 'artifacts/real-necklace-live.png', fullPage: true });
   const downloadEvent = page.waitForEvent('download');

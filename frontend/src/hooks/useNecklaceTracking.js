@@ -1,11 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { acquirePoseLandmarker, poseIntervalMs } from '../services/poseLandmarker.js';
-import {
-  measureNecklace,
-  updateNecklaceTracking,
-} from '../components/tryon/necklaceGeometry.js';
+import { measureNecklace, updateNecklaceTracking } from '../components/tryon/necklaceGeometry.js';
 
-export function useNecklaceTracking(source, dimensions, onStatus, onSample, retry) {
+export function useNecklaceTracking(source, dimensions, onStatus, onSample, retry, calibration) {
   const track = useRef(null),
     sample = useRef(() => {}),
     callbacks = useRef({ onStatus, onSample });
@@ -53,6 +50,7 @@ export function useNecklaceTracking(source, dimensions, onStatus, onSample, retr
           dimensions.width,
           dimensions.height,
           source.mirrored,
+          calibration,
         );
         const completed = performance.now();
         track.current = updateNecklaceTracking(track.current, measured, completed, source.live);
@@ -77,7 +75,7 @@ export function useNecklaceTracking(source, dimensions, onStatus, onSample, retr
       sample.current = () => {};
       detector?.release();
     };
-  }, [source, dimensions.width, dimensions.height, retry]);
+  }, [source, dimensions.width, dimensions.height, retry, calibration]);
 
   return { track, sample };
 }

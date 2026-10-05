@@ -1,5 +1,3 @@
-import { necklaceFit } from './necklaceGeometry.js';
-
 // Keep transparent product files unchanged; fit only their visible pixels in the canvas.
 export function visibleAssetBounds({ data, width, height }) {
   let left = width,
@@ -24,8 +22,7 @@ export function visibleAssetBounds({ data, width, height }) {
 export function necklaceDrawRect(bounds, geometry) {
   const width = geometry.width;
   const height = (width * bounds.height) / bounds.width;
-  // Geometry retains its existing smoothed chest center. Anchor the visible necklace
-  // back at the neck, a little above the shoulder midpoint, in the rotated frame.
-  const neckOffset = geometry.shoulderWidth * (necklaceFit.neckDropRatio + 0.1);
-  return { x: -width / 2, y: -height * 0.24 - neckOffset, width, height };
+  // Geometry already contains the fused neck anchor and style drop. Apply no
+  // second shoulder offset; retain the selected PNG's visible aspect ratio.
+  return { x: -width / 2, y: -height * 0.24, width, height };
 }

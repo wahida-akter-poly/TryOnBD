@@ -15,6 +15,7 @@ import ShirtOverlay from '../../components/tryon/ShirtOverlay.jsx';
 import ShirtStudio from '../../components/tryon/ShirtStudio.jsx';
 import { shirtCalibration } from '../../data/shirtProducts.js';
 import NecklaceOverlay from '../../components/tryon/NecklaceOverlay.jsx';
+import { necklaceCalibration } from '../../components/tryon/necklaceCalibration.js';
 
 const blobFrom = (canvas) =>
   new Promise((resolve, reject) =>
@@ -117,6 +118,10 @@ function TryOnStudio({ product }) {
   const isNecklace = mode === 'necklace';
   const isShirt = product?.engine === 'clothing';
   const shirtFit = useMemo(() => (isShirt ? shirtCalibration(product) : null), [product, isShirt]);
+  const necklaceFit = useMemo(
+    () => (isNecklace ? necklaceCalibration(product) : null),
+    [product, isNecklace],
+  );
   const [styleId, setStyleId] = useState(product?.accessoryStyle || 'aviator');
   const style = isShirt
     ? { id: 'tshirt', kind: 'tshirt', overlayAsset: shirtFit.asset }
@@ -354,6 +359,7 @@ function TryOnStudio({ product }) {
         ) : isNecklace ? (
           <NecklaceOverlay
             ref={preview}
+            fit={necklaceFit}
             source={source}
             overlay={overlay}
             retry={retry}

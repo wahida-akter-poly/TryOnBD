@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import { useNecklaceTracking } from '../../hooks/useNecklaceTracking.js';
 import { necklaceVisibility } from './necklaceGeometry.js';
+import { necklaceStyles } from './necklaceCalibration.js';
 import { visibleAssetBounds, necklaceDrawRect } from './necklaceAssets.js';
 
 const copy = (canvas) => {
@@ -39,7 +40,10 @@ const loadAsset = (src) =>
     image.src = src;
   });
 
-export default forwardRef(function NecklaceOverlay({ source, overlay, retry, onStatus }, ref) {
+export default forwardRef(function NecklaceOverlay(
+  { source, overlay, fit = necklaceStyles.SHORT, retry, onStatus },
+  ref,
+) {
   const canvas = useRef(null),
     original = useRef(null),
     asset = useRef(null),
@@ -64,6 +68,7 @@ export default forwardRef(function NecklaceOverlay({ source, overlay, retry, onS
     (patch) => report.current(patch),
     () => render.current(),
     retry,
+    fit,
   );
 
   useImperativeHandle(
@@ -132,6 +137,7 @@ export default forwardRef(function NecklaceOverlay({ source, overlay, retry, onS
         ctx.drawImage(source.composite, 0, 0, target.width, target.height);
       } else {
         const geometry = track.current?.geometry;
+        target.dataset.neckAnchor = geometry?.anchorMode || 'waiting';
         const visibility = source.live
           ? necklaceVisibility(track.current, performance.now())
           : geometry
@@ -190,6 +196,7 @@ export default forwardRef(function NecklaceOverlay({ source, overlay, retry, onS
       className="tryon-canvas"
       aria-label="Necklace try-on canvas"
       data-overlay-src={overlay}
+      data-necklace-style={fit.style}
     />
   );
 });

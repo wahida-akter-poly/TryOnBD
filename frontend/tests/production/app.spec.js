@@ -270,19 +270,40 @@ test('Jewelry is empty without matching backend products', async ({ page }) => {
   await expect(page.locator('.product-card')).toHaveCount(0);
 });
 
-test('multiple necklaces use selected backend details and overlay URLs', async ({ page }) => {
-  const second = {
-    ...products.find((p) => p.id === 78),
-    id: 91,
-    name: 'Second Necklace',
-    imageUrl: '/assets/jewelry/necklaces/silver-diamond-necklace.png?variant=b',
-    categoryId: 501,
-  };
-  await setup(page, [...products, second]);
+test('four necklaces use product metadata styles and selected backend image URLs', async ({
+  page,
+}) => {
+  const base = products.find((p) => p.id === 78);
+  const necklaces = [
+    { ...base, expectedStyle: 'SHORT' },
+    {
+      ...base,
+      id: 91,
+      name: 'Pearl Choker',
+      imageUrl: `${base.imageUrl}?variant=choker`,
+      expectedStyle: 'CHOKER',
+    },
+    {
+      ...base,
+      id: 92,
+      name: 'Short Necklace',
+      imageUrl: `${base.imageUrl}?variant=short`,
+      expectedStyle: 'SHORT',
+    },
+    {
+      ...base,
+      id: 93,
+      name: 'Pendant Necklace',
+      imageUrl: `${base.imageUrl}?variant=pendant`,
+      expectedStyle: 'PENDANT',
+    },
+  ];
+  // API fixtures reuse the existing real PNG; no new images or database rows.
+  await setup(page, [...products.filter((p) => p.arType !== 'NECKLACE'), ...necklaces]);
   await page.goto('/products?group=Jewelry');
-  await expect(page.locator('.product-card')).toHaveCount(2);
+  await expect(page.locator('.product-card')).toHaveCount(4);
   await expect(page.locator('a[href*="necklace-preview"]')).toHaveCount(0);
-  for (const product of [products.find((p) => p.id === 78), second]) {
+  for (const product of necklaces) {
     await page.goto(`/products/${product.id}`);
     await expect(page.getByRole('heading', { name: product.name, exact: true })).toBeVisible();
     await expect(page.getByRole('img', { name: product.name, exact: true })).toHaveAttribute(
@@ -294,6 +315,10 @@ test('multiple necklaces use selected backend details and overlay URLs', async (
     await expect(page.getByLabel('Necklace try-on canvas')).toHaveAttribute(
       'data-overlay-src',
       product.imageUrl,
+    );
+    await expect(page.getByLabel('Necklace try-on canvas')).toHaveAttribute(
+      'data-necklace-style',
+      product.expectedStyle,
     );
     await expect(
       page.getByText('Start your camera or upload a clear, front-facing photo.'),
@@ -324,6 +349,10 @@ test('invalid product detail IDs never request the numeric product API', async (
 test('necklace photo uses MediaPipe, exports the real asset and saves product metadata', async ({
   page,
 }) => {
+  const modelRequests = [];
+  page.context().on('request', (request) => {
+    if (/landmarker(?:_lite)?\.task(?:\?|$)/.test(request.url())) modelRequests.push(request.url());
+  });
   await setup(page);
   await page.addInitScript(() => localStorage.setItem('tryonbd:token', 'photo-test-token'));
   let savedSession;
@@ -347,6 +376,12 @@ test('necklace photo uses MediaPipe, exports the real asset and saves product me
     .getByLabel('Upload photo', { exact: true })
     .setInputFiles('tests/fixtures/shirt-hands-on-hips.jpg');
   await expect(page.getByText('Pose detected', { exact: true })).toBeVisible({ timeout: 45000 });
+  await expect(page.getByLabel('Necklace try-on canvas')).toHaveAttribute(
+    'data-neck-anchor',
+    'pose-head',
+  );
+  expect(modelRequests.some((url) => url.includes('pose_landmarker_lite.task'))).toBe(true);
+  expect(modelRequests.some((url) => url.includes('face_landmarker.task'))).toBe(false);
   const downloadEvent = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download PNG', exact: true }).click();
   const download = await downloadEvent;
@@ -422,6 +457,10 @@ test('necklace simulated camera captures the fitted asset and releases its strea
   expect(await page.evaluate(() => window.cameraRequests)).toBe(0);
   await page.getByRole('button', { name: 'Start Camera', exact: true }).click();
   await expect(page.getByText('Pose detected', { exact: true })).toBeVisible({ timeout: 45000 });
+  await expect(page.getByLabel('Necklace try-on canvas')).toHaveAttribute(
+    'data-neck-anchor',
+    'pose-head',
+  );
   await expect(page.getByRole('button', { name: 'Capture', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Capture', exact: true }).click();
   await expect(page.getByText('Captured', { exact: true })).toBeVisible();
