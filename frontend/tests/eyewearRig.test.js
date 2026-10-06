@@ -118,7 +118,7 @@ test('frontal and near-frontal shafts point backward with a short tucked project
             (_, i) => (rig.project(rig.templePoint(t.side, i / 64)).x - t.hingeX) * t.side,
           ),
         ) / transform.width;
-      assert.ok(extent > 0.005 && extent < 0.09, `${yaw}: root/wing extent ${extent}`);
+      assert.ok(extent > 0.005 && extent < 0.095, `${yaw}: root/wing extent ${extent}`);
       close(t.physicalLength / rig.physicalWidth, fit.templeDepth);
     }
   }
@@ -156,6 +156,98 @@ test('proximal protection recedes smoothly on the far side without deforming eit
       }
     }
     previous = rig;
+  }
+});
+
+test('constrained ribbon fixes both photographed endpoints, including a strongly curved hook', () => {
+  for (const yaw of [0, -15, 15, -30, 30]) {
+    const rig = createEyewearRig(
+      {
+        ...anchor,
+        rawYawDegrees: yaw,
+        headShape: { radius: 0.5, earRadius: 0.48, sideDepth: 0.35, sideHeight: -0.09 },
+      },
+      transform,
+      fit,
+    );
+    for (const temple of rig.temples) {
+      const source = part(temple.side < 0 ? 'left' : 'right');
+      source.visibleTip = { ...source.visibleTip, y: source.visibleHinge.y + 350 };
+      source.bounds = { ...source.bounds, height: 460 };
+      const mesh = rigidTempleMesh(rig, temple, source);
+      const u = (source.visibleTip.x - source.bounds.x) / source.bounds.width;
+      const column = mesh.columns.findIndex((c) => Math.abs(c - u) < 1e-10);
+      const edge =
+        column < mesh.strips.length
+          ? [mesh.strips[column][0], mesh.strips[column][3]]
+          : [mesh.strips.at(-1)[1], mesh.strips.at(-1)[2]];
+      const v = (source.visibleTip.y - source.bounds.y) / source.bounds.height;
+      const weight = (1 - v) / edge[0].perspective + v / edge[1].perspective;
+      for (const axis of ['x', 'y'])
+        close(
+          (((1 - v) * edge[0][axis]) / edge[0].perspective +
+            (v * edge[1][axis]) / edge[1].perspective) /
+            weight,
+          temple.target[axis],
+        );
+      close(mesh.tip.x, temple.target.x);
+      close(mesh.tip.y, temple.target.y);
+      close(
+        rig.paths[temple.side < 0 ? 0 : 1][3].z,
+        0.35 / fit.widthMultiplier + fit.earTargetDepth,
+      );
+      const before = rig.templePoint(temple.side, fit.templeRootLength - 1e-5),
+        joint = rig.templePoint(temple.side, fit.templeRootLength),
+        after = rig.templePoint(temple.side, fit.templeRootLength + 1e-5);
+      for (const axis of ['x', 'y', 'z'])
+        close((joint[axis] - before[axis]) / 1e-5, (after[axis] - joint[axis]) / 1e-5, 0.001);
+    }
+  }
+});
+
+test('posterior constraints never reverse depth on narrow heads or extreme valid calibrations', () => {
+  for (const templeDepth of [0.4, 0.85])
+    for (const templeRootLength of [0.08, 0.3])
+      for (const earTargetDepth of [0.08, 0.45]) {
+        const rig = createEyewearRig(
+          {
+            ...anchor,
+            headShape: { radius: 0.42, earRadius: 0.42, sideDepth: 0.12, sideHeight: -0.08 },
+          },
+          transform,
+          { ...fit, templeDepth, templeRootLength, earTargetDepth },
+        );
+        let previous = -Infinity;
+        for (let i = 0; i <= 100; i++) {
+          const point = rig.templePoint(-1, i / 100);
+          assert.ok(point.z >= previous - 1e-10);
+          previous = point.z;
+        }
+      }
+});
+
+test('head-local ear targets damp measurement spikes independently from fast rigid head turns', () => {
+  const initial = {
+    ...anchor,
+    headShape: { radius: 0.5, earRadius: 0.48, sideDepth: 0.3, sideHeight: -0.08 },
+  };
+  let previous = [initial];
+  for (const yaw of [30, -30, 15, -15, 0]) {
+    const next = {
+      ...initial,
+      rawYawDegrees: yaw,
+      headShape: { radius: 0.58, earRadius: 0.58, sideDepth: 0.42, sideHeight: 0.04 },
+    };
+    const result = smoothAnchors(previous, [next], 16)[0];
+    for (const field of Object.keys(initial.headShape))
+      assert.ok(Math.abs(result.headShape[field] - previous[0].headShape[field]) <= 0.0080001);
+    const rig = createEyewearRig(result, transform, fit);
+    for (const temple of rig.temples)
+      close(
+        rigidTempleMesh(rig, temple, part(temple.side < 0 ? 'left' : 'right')).hinge.x,
+        temple.hingeX,
+      );
+    previous = [result];
   }
 });
 

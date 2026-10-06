@@ -5,7 +5,7 @@ import { normalizeProduct } from '../../services/catalog';
 import { errorMessage } from '../../services/api';
 import { useApp } from '../../context/AppContext';
 import { Button, Price, LoadingState, ErrorState } from '../../components/common/UI';
-import { ProductImage } from '../../components/product/ProductCard';
+import ProductGallery from '../../components/product/ProductGallery';
 export default function ProductDetails() {
   const { id } = useParams();
   const { state, addToCart, identity } = useApp();
@@ -44,7 +44,7 @@ export default function ProductDetails() {
     <div className="container page">
       <Link to="/products">Back to shop</Link>
       <div className="production-details">
-        <ProductImage product={product} />
+        <ProductGallery key={product.id} product={product} />
         <section>
           <span className="eyebrow">
             {product.categoryName ||

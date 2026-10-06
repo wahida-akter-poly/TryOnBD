@@ -1,5 +1,42 @@
 // Alpha-weighted geometry, measured once per asset. The shaft and its curved
 // hook remain photograph pixels; PCA only identifies the overall rotation.
+export function measureTempleCenterline(pixels, width, height, hinge, tip, count = 16) {
+  const dx = tip.x - hinge.x,
+    band = Math.max(1, Math.abs(dx) / count / 2);
+  return Array.from({ length: count + 1 }, (_, i) => {
+    const u = i / count;
+    if (i === 0 || i === count) return { u, y: i === 0 ? hinge.y : tip.y };
+    const x = hinge.x + dx * u;
+    let weight = 0,
+      sum = 0;
+    for (
+      let px = Math.max(0, Math.floor(x - band));
+      px < Math.min(width, Math.ceil(x + band));
+      px++
+    )
+      for (let py = 0; py < height; py++) {
+        const alpha = pixels[(py * width + px) * 4 + 3];
+        weight += alpha;
+        sum += alpha * (py + 0.5);
+      }
+    return { u, y: weight ? sum / weight : hinge.y + (tip.y - hinge.y) * u };
+  });
+}
+
+export function measureTempleThickness(pixels, width, height, hinge, tip) {
+  const dx = tip.x - hinge.x,
+    samples = [];
+  // Ignore hinge hardware and the hook; estimate the genuine shaft cross-section.
+  for (let i = 2; i <= 10; i++) {
+    const x = Math.max(0, Math.min(width - 1, Math.round(hinge.x + (dx * i) / 16)));
+    let thickness = 0;
+    for (let y = 0; y < height; y++) thickness += pixels[(y * width + x) * 4 + 3] / 255;
+    if (thickness > 0) samples.push(thickness / Math.abs(dx));
+  }
+  samples.sort((a, b) => a - b);
+  return samples[Math.floor(samples.length / 2)] ?? 0.03;
+}
+
 export function measureTempleAlpha(pixels, width, height, left) {
   let minX = width,
     minY = height,

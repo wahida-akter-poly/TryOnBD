@@ -25,18 +25,20 @@ export function estimateHeadShape(surface, yaw = 0, pitch = 0) {
   // Upper lateral oval, above the cheek/jaw samples used for skull dimensions.
   // Median both sides so a single contour point cannot drag the ear seat down.
   const upper = [127, 162, 234, 356, 389, 454].map((id) => surface[id]);
-  const heights = upper.every((p) => p && [p.x, p.y, p.z].every(Number.isFinite))
-    ? upper
-        .map(
-          (p) =>
-            unrotateFacePoint({ x: p.x * scale, y: p.y * scale, z: p.z * scale }, yaw, pitch).y,
-        )
-        .sort((a, b) => a - b)
+  const upperLocal = upper.every((p) => p && [p.x, p.y, p.z].every(Number.isFinite))
+    ? upper.map((p) =>
+        unrotateFacePoint({ x: p.x * scale, y: p.y * scale, z: p.z * scale }, yaw, pitch),
+      )
     : null;
+  const earRadii = upperLocal?.map((p) => Math.abs(p.x)).sort((a, b) => a - b);
+  const heights = upperLocal?.map((p) => p.y).sort((a, b) => a - b);
   return {
     radius: clamp((radii[3] + radii[4]) / 2, 0.42, 0.58),
     sideDepth: clamp((depths[2] + depths[3]) / 2, 0.12, 0.42),
     sideHeight: heights ? clamp((heights[2] + heights[3]) / 2, -0.16, 0.04) : -0.04,
+    earRadius: earRadii
+      ? clamp((earRadii[2] + earRadii[3]) / 2, 0.42, 0.58)
+      : clamp((radii[3] + radii[4]) / 2, 0.42, 0.58),
   };
 }
 

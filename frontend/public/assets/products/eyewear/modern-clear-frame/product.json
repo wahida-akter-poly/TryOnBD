@@ -10,6 +10,7 @@
   "frontAsset": "front.png",
   "leftTempleAsset": "left-temple.png",
   "rightTempleAsset": "right-temple.png",
+  "gallery": ["modern-clear-front.webp", "modern-clear-3q.webp", "modern-clear-side.webp"],
   "fitProfile": {
     "widthMultiplier": 0.92,
     "bridgePivot": {
@@ -36,6 +37,7 @@
     "templeVerticalOffset": -0.008,
     "frontalVisibleFraction": 0.07,
     "earSeatOffset": -0.018,
-    "earSeatWeight": 0.9
+    "earSeatWeight": 0.9,
+    "earTargetDepth": 0.32
   }
 }

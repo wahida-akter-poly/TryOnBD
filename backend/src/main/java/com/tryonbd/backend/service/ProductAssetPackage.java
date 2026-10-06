@@ -14,7 +14,7 @@ public record ProductAssetPackage(String key, boolean draft, Long sellerId, Long
         String arType, String imageUrl, Map<String, Object> arMetadata) {
     private static final Set<String> FIELDS = Set.of("draft", "sellerId", "existingProductId", "name",
         "description", "price", "stockQuantity", "category", "arType", "style", "frontAsset",
-        "leftTempleAsset", "rightTempleAsset", "fitProfile");
+        "leftTempleAsset", "rightTempleAsset", "fitProfile", "gallery");
     private static final Map<String, Set<String>> TYPES = Map.of(
         "eyewear", Set.of("EYEWEAR"), "clothing", Set.of("SHIRT", "TSHIRT", "CLOTHING"),
         "jewelry", Set.of("NECKLACE"));
@@ -75,6 +75,18 @@ public record ProductAssetPackage(String key, boolean draft, Long sellerId, Long
         } else if (json.has("leftTempleAsset") || json.has("rightTempleAsset")) {
             throw new IllegalArgumentException("Temple assets are supported only for EYEWEAR");
         }
+        if (json.has("gallery")) {
+            var gallery = json.get("gallery");
+            if (!gallery.isArray() || gallery.size() > 12) throw new IllegalArgumentException("gallery must contain at most 12 local image filenames");
+            List<String> urls = new ArrayList<>();
+            for (var entry : gallery) {
+                if (!entry.isTextual()) throw new IllegalArgumentException("gallery filenames must be text");
+                String url = galleryImage(root, folder, key, entry.asText());
+                if (urls.contains(url)) throw new IllegalArgumentException("Duplicate gallery image");
+                urls.add(url);
+            }
+            metadata.put("gallery", List.copyOf(urls));
+        }
         if (json.has("style")) {
             String style = text(json, "style", true, 20).toUpperCase(Locale.ROOT);
             if (!type.equals("NECKLACE") || !Set.of("CHOKER", "SHORT", "PENDANT").contains(style))
@@ -123,6 +135,34 @@ public record ProductAssetPackage(String key, boolean draft, Long sellerId, Long
         if (!path.toRealPath().startsWith(root.toRealPath())) throw new IllegalArgumentException("Asset escapes product directory: " + path);
         // Refuse aliases: two symlinked folders must not produce duplicate managed products.
         if (Files.isSymbolicLink(path) || !path.toRealPath().equals(path.toAbsolutePath().normalize())) throw new IllegalArgumentException("Symlinks are not product assets: " + path);
+    }
+    private static String galleryImage(Path root, Path folder, String key, String filename) throws Exception {
+        if (filename.length() > 120 || !filename.matches("[a-zA-Z0-9][a-zA-Z0-9._-]*\\.(png|webp)"))
+            throw new IllegalArgumentException("gallery must name local PNG or WebP images");
+        Path file = folder.resolve(filename); confined(root, file); confined(folder, file);
+        long size = Files.size(file);
+        if (size > 20L * 1024 * 1024 || size < 20) throw new IllegalArgumentException("Invalid gallery image size");
+        byte[] header;
+        try (var stream = Files.newInputStream(file)) { header = stream.readNBytes(20); }
+        if (filename.endsWith(".webp")) {
+            long declared = Integer.toUnsignedLong(java.nio.ByteBuffer.wrap(header, 4, 4).order(java.nio.ByteOrder.LITTLE_ENDIAN).getInt());
+            String riff = new String(header, 0, 4, java.nio.charset.StandardCharsets.US_ASCII);
+            String format = new String(header, 8, 4, java.nio.charset.StandardCharsets.US_ASCII);
+            String chunk = new String(header, 12, 4, java.nio.charset.StandardCharsets.US_ASCII);
+            if (!riff.equals("RIFF") || !format.equals("WEBP") || !Set.of("VP8 ", "VP8L", "VP8X").contains(chunk) || declared + 8 != size)
+                throw new IllegalArgumentException("Invalid WebP gallery image");
+        } else {
+            if (!Arrays.equals(Arrays.copyOf(header, 8), new byte[]{(byte)137,80,78,71,13,10,26,10})) throw new IllegalArgumentException("Invalid PNG gallery image");
+            try (var input = ImageIO.createImageInputStream(file.toFile())) {
+                var readers = ImageIO.getImageReaders(input);
+                if (!readers.hasNext()) throw new IllegalArgumentException("Invalid gallery image");
+                var reader = readers.next();
+                try { reader.setInput(input); long w = reader.getWidth(0), h = reader.getHeight(0);
+                    if (w < 1 || h < 1 || w * h > 24000000) throw new IllegalArgumentException("Gallery image exceeds 24 megapixels");
+                } finally { reader.dispose(); }
+            }
+        }
+        return "/assets/products/" + key + "/" + filename;
     }
     private static String image(Path root, Path folder, String key, JsonNode json, String field, String fallback) throws Exception {
         String filename = json.has(field) ? text(json, field, true, 120) : fallback;

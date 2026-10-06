@@ -1,5 +1,10 @@
 import { estimateHeadShape, alignFaceSurface } from './eyewearHeadGeometry.js';
-import { createEyewearRig, drawEyewearRig, rigidTempleMesh } from './eyewearRig.js';
+import {
+  createEyewearRig,
+  drawEyewearRig,
+  rigidTempleMesh,
+  eyewearRigConfig,
+} from './eyewearRig.js';
 import { fallbackYawDegrees, normalizeYawDegrees } from './headPose.js';
 import { faceToCanvas } from './earTracking.js';
 import { templeImagePlacement } from './templeAssetGeometry.js';
@@ -79,6 +84,8 @@ export function smoothAnchors(previous, next, elapsedMs) {
     );
     const yawAlpha =
       1 - Math.exp(-Math.max(0, elapsedMs) / (trackingConfig.yawSmoothingMs - 45 * turn));
+    const earAlpha = 1 - Math.exp(-Math.max(0, elapsedMs) / eyewearRigConfig.earTargetSmoothingMs);
+    const maxEarStep = (eyewearRigConfig.earTargetMaxSpeed * Math.max(0, elapsedMs)) / 1000;
     const filtered = {
       ...anchor,
       ...(anchor.headShape
@@ -87,7 +94,10 @@ export function smoothAnchors(previous, next, elapsedMs) {
               Object.entries(anchor.headShape).map(([key, value]) => [
                 key,
                 (old.headShape?.[key] ?? value) +
-                  yawAlpha * (value - (old.headShape?.[key] ?? value)),
+                  Math.max(
+                    -maxEarStep,
+                    Math.min(maxEarStep, earAlpha * (value - (old.headShape?.[key] ?? value))),
+                  ),
               ]),
             ),
           }

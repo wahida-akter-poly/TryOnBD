@@ -1,4 +1,8 @@
-import { templeSourceBasis } from './templeAssetGeometry.js';
+import {
+  templeSourceBasis,
+  measureTempleCenterline,
+  measureTempleThickness,
+} from './templeAssetGeometry.js';
 
 export function loadImage(url) {
   return new Promise((resolve, reject) => {
@@ -129,6 +133,8 @@ export function inspectTemple(part, left, anchors) {
     hingePivot: { x: (hinge.x - bounds.x) / bounds.width, y: (hinge.y - bounds.y) / bounds.height },
     visibleHinge: hinge,
     visibleTip: tip,
+    centerline: measureTempleCenterline(data, canvas.width, canvas.height, hinge, tip),
+    shaftThickness: measureTempleThickness(data, canvas.width, canvas.height, hinge, tip),
     visibleLength: basis.length,
     normalizedAxisDegrees: 0,
     earPivot: { x: left ? 0 : 1, y: (tip.y - bounds.y) / bounds.height },
@@ -236,10 +242,13 @@ export async function loadGlassesAssembly(frontFrameSrc, leftTempleSrc, rightTem
     loadAccessoryAsset(leftTempleSrc, null, true),
     loadAccessoryAsset(rightTempleSrc, null, true),
   ]);
+  const left = inspectTemple(leftTemple, true, fit.templeSourceAnchors?.left);
+  const right = inspectTemple(rightTemple, false, fit.templeSourceAnchors?.right);
+  const shaftThickness = Math.min(left.shaftThickness, right.shaftThickness);
   return {
     ...front,
     ...lensOccluder(front),
-    leftTemple: inspectTemple(leftTemple, true, fit.templeSourceAnchors?.left),
-    rightTemple: inspectTemple(rightTemple, false, fit.templeSourceAnchors?.right),
+    leftTemple: { ...left, ribbonScale: shaftThickness / left.shaftThickness },
+    rightTemple: { ...right, ribbonScale: shaftThickness / right.shaftThickness },
   };
 }

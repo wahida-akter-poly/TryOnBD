@@ -61,3 +61,26 @@ export function arCapability(product) {
   }
   return { available: true };
 }
+
+// Customer images are explicitly listed; AR component URLs are never inferred.
+export function productGallerySources(product) {
+  const primary = imageSource(product?.imageUrl);
+  if (!primary) return [];
+  const metadata = product.arMetadata;
+  const listed =
+    metadata?.frontAsset && metadata.frontAsset !== product.imageUrl
+      ? []
+      : (metadata?.gallery ?? product.gallery ?? []);
+  const images = Array.isArray(listed)
+    ? listed
+        .slice(0, 12)
+        .map((value) => {
+          if (typeof value !== 'string') return null;
+          if (/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.(png|webp|jpe?g)$/i.test(value))
+            return primary.slice(0, primary.lastIndexOf('/') + 1) + value;
+          return imageSource(value);
+        })
+        .filter(Boolean)
+    : [];
+  return [...new Set([primary, ...images])];
+}

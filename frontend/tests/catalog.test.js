@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { arEngine, normalizeProduct, imageSource } from '../src/services/catalog.js';
+import {
+  arEngine,
+  normalizeProduct,
+  imageSource,
+  productGallerySources,
+} from '../src/services/catalog.js';
 test('AR engines use metadata and never numeric product IDs', () => {
   for (const type of ['SHIRT', 'TSHIRT', 'CLOTHING']) assert.equal(arEngine(type), 'clothing');
   for (const type of ['EYEWEAR', 'SUNGLASSES']) assert.equal(arEngine(type), 'sunglasses');
@@ -11,6 +16,32 @@ test('AR engines use metadata and never numeric product IDs', () => {
     'sunglasses',
   );
   assert.equal(normalizeProduct({ id: 77, arType: 'NECKLACE', price: 0 }).engine, 'necklace');
+});
+
+test('customer gallery uses only explicitly listed safe images and preserves the catalog front', () => {
+  const product = {
+    imageUrl: '/assets/products/eyewear/frame/front.png',
+    arMetadata: {
+      frontAsset: '/assets/products/eyewear/frame/front.png',
+      leftTempleAsset: '/left-temple.png',
+      rightTempleAsset: '/right-temple.png',
+      gallery: ['angle.png', 'side.webp', 'angle.png', 'javascript:bad', null],
+    },
+  };
+  assert.deepEqual(productGallerySources(product), [
+    product.imageUrl,
+    '/assets/products/eyewear/frame/angle.png',
+    '/assets/products/eyewear/frame/side.webp',
+  ]);
+  assert.deepEqual(
+    productGallerySources({
+      ...product,
+      arMetadata: { frontAsset: '/old.png', gallery: ['old-side.png'] },
+    }),
+    [product.imageUrl],
+  );
+  assert.deepEqual(productGallerySources({ imageUrl: '/only.png' }), ['/only.png']);
+  assert.deepEqual(productGallerySources({ imageUrl: null, gallery: ['front.png'] }), []);
 });
 test('normalization preserves backend images, identity, category and stock', () => {
   const input = {

@@ -16,6 +16,9 @@ export const eyewearRigConfig = Object.freeze({
   frontalVisibleFraction: 0.055,
   earSeatOffset: -0.015,
   earSeatWeight: 0.85,
+  earTargetDepth: 0.32,
+  earTargetSmoothingMs: 140,
+  earTargetMaxSpeed: 0.5,
   farRootOcclusionDegrees: 35,
   farRootRetention: 0.12,
   maxYawDegrees: 65,
@@ -91,9 +94,17 @@ export function createEyewearRig(anchor, transform, fit = {}) {
   );
   const earSeatOffset = clamp(fit.earSeatOffset ?? eyewearRigConfig.earSeatOffset, -0.08, 0.08);
   const earSeatWeight = clamp(fit.earSeatWeight ?? eyewearRigConfig.earSeatWeight, 0, 1);
-  const sideProgress = clamp(sideDepth / depth, 0.4, 0.75);
-  // Three cubic segments: hinge wrap, side shaft, posterior/ear-direction end.
-  // Length and curvature live in HEAD coordinates and never change with yaw.
+  const earTargetDepth = clamp(fit.earTargetDepth ?? eyewearRigConfig.earTargetDepth, 0.08, 0.45);
+  const earDepth = clamp(sideDepth + earTargetDepth, depth * rootLength + 0.2, 0.95);
+  const sideProgress = clamp(Math.max(sideDepth, depth * rootLength + 0.08) / earDepth, 0.4, 0.75);
+  const earRadius = clamp(
+    (anchor.headShape?.earRadius ?? anchor.headShape?.radius ?? 0.49) * faceToFrame,
+    0.46,
+    0.64,
+  );
+  // Exact hinge and estimated ear seat bound a single head-local path. The
+  // proximal section is straight; C1 cubic segments tuck the ribbon along the
+  // skull side. Only shared, filtered head dimensions can change the ear target.
   const paths = localHinges.map((h, i) => {
     const side = i ? 1 : -1,
       // Compensate perspective once in head coordinates. This creates a small
@@ -114,25 +125,51 @@ export function createEyewearRig(anchor, transform, fit = {}) {
       {
         x: side * Math.max(rootX, radius + splay),
         y: h.y + (earY - h.y) * 0.8,
-        z: depth * sideProgress,
+        z: Math.min(
+          earDepth,
+          Math.max(
+            earDepth * sideProgress,
+            depth * rootLength + (depth * (sideProgress - rootLength)) / 3,
+          ),
+        ),
       },
       // Follow the skull side to the ear seat; the earlier deep inward fold
       // shortened frontal projection and pulled the photographed hook down.
-      { x: side * Math.max(Math.abs(h.x), radius - curve * 0.4), y: earY, z: depth },
+      { x: side * Math.max(Math.abs(h.x), earRadius + splay * 0.25), y: earY, z: earDepth },
     ];
   });
   const templePoint = (side, u, v = 0) => {
     const path = paths[side < 0 ? 0 : 1],
       t = clamp(u, 0, 1);
     const knots = [0, rootLength, sideProgress, 1];
-    let k = t < knots[1] ? 0 : t < knots[2] ? 1 : 2;
+    if (t <= rootLength) {
+      const f = t / rootLength;
+      return {
+        x: path[0].x + (path[1].x - path[0].x) * f,
+        y: path[0].y + depth * v,
+        z: path[1].z * f,
+      };
+    }
+    const k = t < sideProgress ? 1 : 2;
     const a = path[k],
       b = path[k + 1],
       f = (t - knots[k]) / (knots[k + 1] - knots[k]);
-    // Smoothstep for the outward wrap; straight posterior depth avoids a hinge
-    // flare and gives the textured ribbon a finite, curved frontal projection.
-    const blend = f * f * (3 - 2 * f);
-    return { x: a.x + (b.x - a.x) * blend, y: a.y + (b.y - a.y) * blend + depth * v, z: depth * u };
+    const tangent = (i, axis) => {
+      if (i === 1) return (path[1][axis] - path[0][axis]) / rootLength;
+      if (i === 2) return axis === 'z' ? 0 : (path[3][axis] - path[1][axis]) / (1 - rootLength);
+      return (path[3][axis] - path[2][axis]) / (1 - sideProgress);
+    };
+    const span = knots[k + 1] - knots[k];
+    const point = Object.fromEntries(
+      ['x', 'y', 'z'].map((axis) => [
+        axis,
+        (2 * f * f * f - 3 * f * f + 1) * a[axis] +
+          (f * f * f - 2 * f * f + f) * span * tangent(k, axis) +
+          (-2 * f * f * f + 3 * f * f) * b[axis] +
+          (f * f * f - f * f) * span * tangent(k + 1, axis),
+      ]),
+    );
+    return { ...point, y: point.y + depth * v };
   };
   // A low-poly posterior skull closes the open facial mesh. Its anterior extent
   // stays BEHIND the bridge. It hides far stems through the side/back of the head.
@@ -240,6 +277,8 @@ export function createEyewearRig(anchor, transform, fit = {}) {
       frontalVisibleFraction,
       earSeatOffset,
       earSeatWeight,
+      earTargetDepth,
+      earDepth,
     },
     paths,
   };
@@ -282,13 +321,25 @@ export function rigidTempleMesh(rig, temple, part) {
     Math.min(0.75, Math.max(0.4, rig.headFit.sideDepth / rig.depth)),
     1,
   ].map((t) => (hinge.x + t * dx - b.x) / b.width);
+  const centerline = part.centerline ?? [
+    { u: 0, y: hinge.y },
+    { u: 1, y: tip.y },
+  ];
+  const centerY = (u) => {
+    const t = clamp(u, 0, 1),
+      index = Math.max(0, centerline.findIndex((p) => p.u >= t) - 1);
+    const a = centerline[index],
+      b = centerline[index + 1];
+    return a.y + ((b.y - a.y) * (t - a.u)) / (b.u - a.u);
+  };
   const mesh = textureMesh(
     (u, v) =>
       rig.project(
         rig.templePoint(
           temple.side,
           (b.x + u * b.width - hinge.x) / dx,
-          (b.y + v * b.height - hinge.y) / Math.abs(dx),
+          ((b.y + v * b.height - centerY((b.x + u * b.width - hinge.x) / dx)) / Math.abs(dx)) *
+            (part.ribbonScale ?? 1),
         ),
       ),
     eyewearRigConfig.textureStrips,
@@ -318,7 +369,7 @@ export function rigidTempleMesh(rig, temple, part) {
     posterior: section(posterior),
     control: temple.target,
     hinge: rig.project(rig.templePoint(temple.side, 0)),
-    tip: rig.project(rig.templePoint(temple.side, 1, (tip.y - hinge.y) / Math.abs(dx))),
+    tip: rig.project(rig.templePoint(temple.side, 1)),
   };
 }
 

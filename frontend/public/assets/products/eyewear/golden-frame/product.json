@@ -9,6 +9,7 @@
   "frontAsset": "front.png",
   "leftTempleAsset": "left-temple.png",
   "rightTempleAsset": "right-temple.png",
+  "gallery": ["front_1.png", "angle_1.png", "side_1.png"],
   "fitProfile": {
     "widthMultiplier": 0.98,
     "bridgePivot": {
@@ -33,6 +34,7 @@
     "frontalVisibleFraction": 0.07,
     "earSeatOffset": -0.028,
     "earSeatWeight": 0.95,
+    "earTargetDepth": 0.34,
     "opacity": 100,
     "lensSurface": {
       "width": 1000,

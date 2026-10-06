@@ -31,6 +31,7 @@ class ControllerRequestTests {
  @Test void genuineGoldenManifestUsesGenericCommerceAndManagementWithoutLosingFitMetadata() throws Exception {
    var source=com.tryonbd.backend.service.ProductAssetPackage.discover(java.nio.file.Path.of("../frontend/public/assets/products"))
      .stream().filter(p->p.key().equals("eyewear/golden-frame")).findFirst().orElseThrow();
+   var sourceFit=(java.util.Map<?,?>)source.arMetadata().get("fitProfile");
    // Legitimate seller principal in the isolated H2 database; production ownership is untouched.
    var pkg=new com.tryonbd.backend.service.ProductAssetPackage(source.key(),false,seller.getId(),null,
      source.name(),source.description(),source.price(),source.stockQuantity(),source.category(),source.arType(),source.imageUrl(),source.arMetadata());
@@ -43,7 +44,7 @@ class ControllerRequestTests {
    String body="{\"name\":\"Golden Frame\",\"description\":\""+source.description()+"\",\"price\":2199,\"stockQuantity\":15,\"arType\":\"EYEWEAR\",\"imageUrl\":\""+source.imageUrl()+"\",\"categoryId\":"+golden.getCategory().getId()+",\"sellerId\":"+seller.getId()+"}";
    for(var role:java.util.List.of(sellerUser,admin,superAdmin)) {
      mvc.perform(put("/api/products/"+id).header("Authorization",token(role)).contentType("application/json").content(body))
-       .andExpect(status().isOk()).andExpect(jsonPath("$.arMetadata.fitProfile.templeDepth").value(.62));
+       .andExpect(status().isOk()).andExpect(jsonPath("$.arMetadata.fitProfile.templeDepth").value(sourceFit.get("templeDepth")));
      assertEquals(source.arMetadata(),products.findById(id).orElseThrow().getArMetadata());
    }
    mvc.perform(post("/api/account/cart/"+id).header("Authorization",token(customer)).contentType("application/json").content("{\"quantity\":2}"))
@@ -205,13 +206,16 @@ class ControllerRequestTests {
        mvc.perform(post("/api/products").header("Authorization",token(sellerUser)).contentType("application/json").content(invalid)).andExpect(status().isBadRequest());
  }
 
- @Test void packageAssetsArePublicPngOnlyAndCannotExposeManifestOrEscapeDirectory() throws Exception {
+ @Test void packageImagesArePublicAndCannotExposeManifestOrEscapeDirectory() throws Exception {
      mvc.perform(get("/assets/products/jewelry/royal-gold-choker/front.png").header("Origin","http://127.0.0.1:5175"))
        .andExpect(status().isOk()).andExpect(header().string("Access-Control-Allow-Origin","*"));
      mvc.perform(get("/api/account/me").header("Origin","https://untrusted.example")).andExpect(status().isForbidden());
      mvc.perform(get("/assets/products/jewelry/royal-gold-choker/front.png")).andExpect(status().isOk())
        .andExpect(content().contentType("image/png")).andExpect(header().string("Cache-Control","no-cache"));
      mvc.perform(get("/assets/products/jewelry/royal-gold-choker/product.json")).andExpect(status().isNotFound());
+     mvc.perform(get("/assets/products/eyewear/modern-clear-frame/modern-clear-side.webp")).andExpect(status().isOk())
+       .andExpect(content().contentType("image/webp"));
+     mvc.perform(get("/assets/products/eyewear/modern-clear-frame/missing.webp")).andExpect(status().isNotFound());
      mvc.perform(get("/assets/products/jewelry/royal-gold-choker/missing.png")).andExpect(status().isNotFound());
      mvc.perform(get("/assets/products/unknown/royal-gold-choker/front.png")).andExpect(status().isNotFound());
      mvc.perform(get("/assets/products/jewelry/../front.png")).andExpect(status().is4xxClientError());

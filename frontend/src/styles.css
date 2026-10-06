@@ -5597,6 +5597,103 @@ tbody tr:hover {
 .production-details p {
   margin: 22px 0;
 }
+.product-gallery {
+  min-width: 0;
+}
+.gallery-main {
+  display: block;
+  width: 100%;
+  height: 420px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f3efe9;
+  cursor: zoom-in;
+}
+.gallery-thumbnails {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 12px 2px;
+}
+.gallery-thumbnails button {
+  flex: 0 0 76px;
+  height: 76px;
+  padding: 4px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: #f3efe9;
+  cursor: pointer;
+}
+.gallery-thumbnails button[aria-pressed='true'] {
+  border-color: #716c65;
+}
+.gallery-thumbnails img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.product-lightbox {
+  width: min(1100px, 94vw);
+  max-width: 94vw;
+  max-height: 94dvh;
+  padding: 20px;
+  border: 0;
+  border-radius: 14px;
+  background: white;
+}
+.product-lightbox::backdrop {
+  background: rgb(0 0 0 / 70%);
+}
+.lightbox-toolbar,
+.lightbox-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.lightbox-toolbar h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+.lightbox-content > .product-image-wrap {
+  height: min(68dvh, 760px);
+}
+.product-card .product-image img {
+  transition: transform 250ms ease;
+  transform: scale(1);
+}
+.product-card .product-image {
+  cursor: zoom-in;
+}
+@media (hover: hover) and (pointer: fine) {
+  .product-card .product-image:hover img {
+    transform: scale(1.15);
+  }
+}
+.product-card a:focus-visible .product-image img {
+  transform: scale(1.15);
+}
+@media (prefers-reduced-motion: reduce) {
+  .product-card .product-image img {
+    transition: none;
+  }
+}
+@media (max-width: 760px) {
+  .gallery-main {
+    height: 280px;
+  }
+  .product-lightbox {
+    padding: 12px;
+  }
+  .lightbox-toolbar {
+    align-items: flex-start;
+  }
+  .lightbox-toolbar .btn {
+    white-space: normal;
+  }
+}
 .production-dashboard {
   display: grid;
   grid-template-columns: 220px 1fr;

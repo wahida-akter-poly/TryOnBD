@@ -195,6 +195,7 @@ test('all five real catalog packages use stable identities and the shared dynami
         'frontalVisibleFraction',
         'earSeatOffset',
         'earSeatWeight',
+        'earTargetDepth',
       ])
         assert.equal(legacy.fit[field], manifest.fitProfile[field]);
     }

@@ -19,16 +19,16 @@ public class ProductAssetController {
         this.directory = Path.of(directory).toAbsolutePath().normalize();
     }
     @GetMapping("/{family}/{slug}/{filename}")
-    public ResponseEntity<Resource> png(@PathVariable("family") String family, @PathVariable("slug") String slug, @PathVariable("filename") String filename) {
+    public ResponseEntity<Resource> image(@PathVariable("family") String family, @PathVariable("slug") String slug, @PathVariable("filename") String filename) {
         if (!Set.of("eyewear", "clothing", "jewelry").contains(family)
                 || !slug.matches("[a-z0-9]+(?:-[a-z0-9]+)*")
-                || !filename.matches("[a-zA-Z0-9][a-zA-Z0-9._-]*\\.png")) throw missing();
+                || !filename.matches("[a-zA-Z0-9][a-zA-Z0-9._-]*\\.(png|webp)")) throw missing();
         try {
             Path root = directory.toRealPath();
             Path group = root.resolve(family), folder = group.resolve(slug), file = folder.resolve(filename);
             if (Files.isSymbolicLink(group) || Files.isSymbolicLink(folder) || Files.isSymbolicLink(file)
                     || !file.toRealPath().startsWith(root) || !file.toRealPath().equals(file.toAbsolutePath().normalize()) || !Files.isRegularFile(file)) throw missing();
-            return ResponseEntity.ok().contentType(MediaType.IMAGE_PNG).cacheControl(CacheControl.noCache())
+            return ResponseEntity.ok().contentType(filename.endsWith(".webp") ? MediaType.parseMediaType("image/webp") : MediaType.IMAGE_PNG).cacheControl(CacheControl.noCache())
                 .lastModified(Files.getLastModifiedTime(file).toMillis()).body(new FileSystemResource(file));
         } catch (IOException error) { throw missing(); }
     }

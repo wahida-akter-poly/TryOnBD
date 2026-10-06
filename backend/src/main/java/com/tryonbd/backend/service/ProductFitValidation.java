@@ -8,7 +8,7 @@ public final class ProductFitValidation {
     public static void validate(String type, Map<String, Object> fit) {
         Set<String> allowed = switch(type) {
             case "EYEWEAR" -> Set.of("bridgePivot", "hinges", "widthMultiplier", "verticalOffset",
-                "rotationOffset", "opacity", "templeDepth", "templeSplay", "cameraDistance", "templeCurve", "templeRootLength", "templeVerticalOffset", "frontalVisibleFraction", "earSeatOffset", "earSeatWeight", "templeSourceAnchors", "lensSurface");
+                "rotationOffset", "opacity", "templeDepth", "templeSplay", "cameraDistance", "templeCurve", "templeRootLength", "templeVerticalOffset", "frontalVisibleFraction", "earSeatOffset", "earSeatWeight", "earTargetDepth", "templeSourceAnchors", "lensSurface");
             case "NECKLACE" -> Set.of("widthRatio", "dropRatio", "pendantDropRatio", "heightRatio");
             default -> Set.of("widthMultiplier", "heightMultiplier", "sourceLandmarks", "sourceRegions",
                 "sourceCutouts", "sourceSleeveAlphaBounds");
@@ -90,6 +90,7 @@ public final class ProductFitValidation {
                 case "frontalVisibleFraction" -> range(value, .02, .075);
                 case "earSeatOffset" -> range(value, -.08, .08);
                 case "earSeatWeight" -> range(value, 0, 1);
+                case "earTargetDepth" -> range(value, .08, .45);
                 case "cameraDistance" -> range(value, 4, 12);
                 default -> fail(key);
             }

@@ -5,6 +5,7 @@ The backend uses Spring Data JPA and a real PostgreSQL database. The frontend AR
 ## Prepared portable PostgreSQL on this computer
 
 A real PostgreSQL 17.6 server is stored in ../.local-postgres (ignored by Git), with durable data in ../.local-postgres/data. It listens only on 127.0.0.1:5432. Development username/password: postgres/postgres. No Windows service is installed.
+The backend's configured database default is 127.0.0.1:5433. To use this portable development server instead, set `DB_URL` to `jdbc:postgresql://127.0.0.1:5432/tryonbd`.
 
 From the backend folder, start the database when it is stopped:
 
@@ -32,7 +33,7 @@ This helper sends SQL directly to PostgreSQL. The portable package contains the 
 Start the already-built backend quickly:
 
 ```powershell
-$env:DB_URL = "jdbc:postgresql://localhost:5432/tryonbd"
+$env:DB_URL = "jdbc:postgresql://127.0.0.1:5433/tryonbd"
 $env:DB_USERNAME = "postgres"
 $env:DB_PASSWORD = "postgres"
 $env:DEMO_SEED = "true"
@@ -46,7 +47,7 @@ With a PostgreSQL installation, add its bin folder to PATH (adjust version/path)
 ```powershell
 $env:Path = "C:\Program Files\PostgreSQL\17\bin;$env:Path"
 Set-Location E:\AOOP\TryOnBD\backend
-psql -h localhost -p 5432 -U postgres -W -d postgres -f .\database_setup.sql
+psql -h 127.0.0.1 -p 5433 -U postgres -W -d postgres -f .\database_setup.sql
 ```
 
 Run this only once. If the database already exists, keep it. Do not run CREATE DATABASE in a transaction.
@@ -55,14 +56,14 @@ Run this only once. If the database already exists, keep it. Do not run CREATE D
 
 ```powershell
 Set-Location E:\AOOP\TryOnBD\backend
-$env:DB_URL = "jdbc:postgresql://localhost:5432/tryonbd"
+$env:DB_URL = "jdbc:postgresql://127.0.0.1:5433/tryonbd"
 $env:DB_USERNAME = "postgres"
 $env:DB_PASSWORD = Read-Host "PostgreSQL password"
 $env:DEMO_SEED = "true"
 .\gradlew.bat bootRun
 ```
 
-Defaults are localhost:5432 / tryonbd / postgres / postgres. Demo seeding is OFF unless DEMO_SEED=true.
+Defaults are 127.0.0.1:5433 / tryonbd / postgres / postgres. Demo seeding is OFF unless DEMO_SEED=true.
 The seed inserts only into empty tables: one user, one seller, two categories, two products.
 Restarting does not duplicate these rows. No H2 dependency or fallback is used.
 
@@ -71,9 +72,9 @@ Look for Hikari PostgreSQL connection, Hibernate EntityManagerFactory initializa
 ## 3. Inspect the seven tables
 
 ```powershell
-psql -h localhost -p 5432 -U postgres -W -d tryonbd -c "\dt"
-psql -h localhost -p 5432 -U postgres -W -d tryonbd -c "SELECT id, name, price, ar_type, category_id, seller_id FROM products;"
-psql -h localhost -p 5432 -U postgres -W -d tryonbd -c "SELECT id, full_name, email FROM users;"
+psql -h 127.0.0.1 -p 5433 -U postgres -W -d tryonbd -c "\dt"
+psql -h 127.0.0.1 -p 5433 -U postgres -W -d tryonbd -c "SELECT id, name, price, ar_type, category_id, seller_id FROM products;"
+psql -h 127.0.0.1 -p 5433 -U postgres -W -d tryonbd -c "SELECT id, full_name, email FROM users;"
 ```
 
 Interactive psql commands:

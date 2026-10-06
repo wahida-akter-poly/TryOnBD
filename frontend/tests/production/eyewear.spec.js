@@ -159,7 +159,14 @@ test.beforeAll(async () => {
           const temples=rig.temples.map(t=>{
             const part=t.side<0?asset.leftTemple:asset.rightTemple;
             const mesh=rigidTempleMesh(rig,t,part),h=t.side<0?rig.front.leftHinge:rig.front.rightHinge;
+            const tipU=(part.visibleTip.x-part.bounds.x)/part.bounds.width;
+            const column=mesh.columns.findIndex(u=>Math.abs(u-tipU)<1e-10);
+            const edge=column<mesh.strips.length?[mesh.strips[column][0],mesh.strips[column][3]]:[mesh.strips.at(-1)[1],mesh.strips.at(-1)[2]];
+            const tipV=(part.visibleTip.y-part.bounds.y)/part.bounds.height;
+            const weight=(1-tipV)/edge[0].perspective+tipV/edge[1].perspective;
+            const endpoint={x:((1-tipV)*edge[0].x/edge[0].perspective+tipV*edge[1].x/edge[1].perspective)/weight,y:((1-tipV)*edge[0].y/edge[0].perspective+tipV*edge[1].y/edge[1].perspective)/weight};
             return {side:t.side,near:t.near,projection:t.projectedLengthRatio,opacity:t.opacity,
+              textureSeatError:Math.hypot(endpoint.x-t.target.x,endpoint.y-t.target.y),
               jointError:Math.hypot(mesh.hinge.x-h.x,mesh.hinge.y-h.y),
               vector:t.vector,physicalLength:t.physicalLength,depth:t.target.depth-t.hingeDepth,
               seatRise:rig.templePoint(t.side,1).y-rig.templePoint(t.side,0).y};
@@ -217,7 +224,13 @@ test.beforeAll(async () => {
           }
           occlusionStress[side<0?'left':'right']={full,rear,mismatch};
         }
-        return {actualMatrix:true,assets:{left:asset.leftTemple.inspection,right:asset.rightTemple.inspection,lenses:asset.lensOutlines.length},occlusionStress,results};
+        const shaft = (part) => ({
+          ...part.inspection,
+          shaftThickness: part.shaftThickness,
+          ribbonScale: part.ribbonScale,
+          normalizedThickness: part.shaftThickness * part.ribbonScale,
+        });
+        return {actualMatrix:true,assets:{left:shaft(asset.leftTemple),right:shaft(asset.rightTemple),lenses:asset.lensOutlines.length},occlusionStress,results};
 
       };
     `,
@@ -250,6 +263,7 @@ const goldenFrames = {
     leftTempleAsset: goldenBase + goldenManifest.leftTempleAsset,
     rightTempleAsset: goldenBase + goldenManifest.rightTempleAsset,
     fitProfile: goldenManifest.fitProfile,
+    gallery: goldenManifest.gallery.map((filename) => goldenBase + filename),
   },
 };
 async function setup(page, product = realFrames) {
@@ -263,6 +277,14 @@ async function setup(page, product = realFrames) {
   });
 }
 
+function expectMatchedTempleThickness(data) {
+  const { left, right } = data.assets;
+  expect(
+    Math.abs(left.normalizedThickness - right.normalizedThickness),
+    'both temple shafts should render at the same measured thickness',
+  ).toBeLessThan(Math.max(left.normalizedThickness, right.normalizedThickness) * 0.02);
+}
+
 test('real photographed temples fit a coherently posed head at frontal, yaw, pitch and roll', async ({
   page,
 }) => {
@@ -272,6 +294,7 @@ test('real photographed temples fit a coherently posed head at frontal, yaw, pit
   await page.addScriptTag({ content: harness });
   const data = await page.evaluate(() => window.checkEyewear());
   console.log('Head-side pose pixel checks:', JSON.stringify(data));
+  expectMatchedTempleThickness(data);
   for (const r of data.results)
     await page
       .locator(`canvas[data-rig-pose="${r.pose.name}"]`)
@@ -296,6 +319,7 @@ test('real photographed temples fit a coherently posed head at frontal, yaw, pit
     expect(r.counts.intrusion).toBe(0);
     for (const t of r.temples) {
       expect(t.jointError).toBeLessThan(0.001);
+      expect(t.textureSeatError).toBeLessThan(0.001);
       expect(t.opacity).toBe(1);
       expect(t.depth).toBeGreaterThan(0.45);
       expect(t.seatRise).toBeLessThan(0);
@@ -546,6 +570,21 @@ test('Golden Frame genuine package fits yaw, roll, pitch and distance with its o
   await page.addScriptTag({ content: harness });
   const data = await page.evaluate((p) => window.checkEyewear(p), product);
   console.log('Golden Frame pose pixel checks:', JSON.stringify(data));
+  expectMatchedTempleThickness(data);
+  const normalizedThickness = [
+    data.assets.left.normalizedThickness,
+    data.assets.right.normalizedThickness,
+  ];
+  expect(Math.abs(normalizedThickness[0] - normalizedThickness[1])).toBeLessThan(
+    Math.max(...normalizedThickness) * 0.02,
+  );
+  expect(
+    [data.assets.left.ribbonScale, data.assets.right.ribbonScale].some((scale) => scale < 1),
+  ).toBe(true);
+  expect(
+    Math.max(data.assets.left.shaftThickness, data.assets.right.shaftThickness) /
+      Math.min(data.assets.left.shaftThickness, data.assets.right.shaftThickness),
+  ).toBeGreaterThan(1.5);
   for (const side of ['left', 'right']) {
     expect(data.occlusionStress[side].full).toBeGreaterThan(80);
     expect(data.occlusionStress[side].rear).toBe(0);
@@ -560,6 +599,7 @@ test('Golden Frame genuine package fits yaw, roll, pitch and distance with its o
     expect(r.framePixels / r.unmaskedFrame).toBeGreaterThan(0.9);
     for (const t of r.temples) {
       expect(t.jointError).toBeLessThan(0.001);
+      expect(t.textureSeatError).toBeLessThan(0.001);
       expect(t.opacity).toBe(1);
       expect(t.seatRise).toBeLessThan(0);
       expect(t.seatRise).toBeGreaterThan(-0.1);

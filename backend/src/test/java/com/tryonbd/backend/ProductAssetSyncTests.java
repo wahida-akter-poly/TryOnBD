@@ -74,6 +74,31 @@ class ProductAssetSyncTests {
         assertEquals(1,products.findById(ids.getFirst()).orElseThrow().getStockQuantity());assertEquals(1,categories.count());
     }
 
+    @Test void genuineGalleryAndEarConstraintPersistWithoutChangingBusinessData() throws Exception {
+        var m=manifest("EYEWEAR");m.put("category","Eyewear");
+        Path p=folder("eyewear","gallery-frame",m);
+        var first=sync.sync(discover(),null,false).getFirst();entities.flush();entities.clear();
+        Product original=products.findById(first.productId()).orElseThrow();original.setStockQuantity(7);original.setPrice(new BigDecimal("3200"));products.saveAndFlush(original);entities.clear();
+        Files.copy(Path.of("../frontend/public/assets/products/eyewear/modern-clear-frame/modern-clear-side.webp"),p.resolve("side.webp"));
+        BufferedImage opaque=new BufferedImage(4,4,BufferedImage.TYPE_INT_RGB);ImageIO.write(opaque,"png",p.resolve("angle.png").toFile());
+        m.put("gallery",List.of("angle.png","side.webp"));m.put("fitProfile",Map.of("earTargetDepth",.32));write(p,m);
+        assertEquals("WOULD_UPDATE",sync.sync(discover(),null,true).getFirst().action());
+        assertEquals("UPDATED",sync.sync(discover(),null,false).getFirst().action());entities.flush();entities.clear();
+        var stored=products.findById(first.productId()).orElseThrow();
+        assertEquals(7,stored.getStockQuantity());assertEquals(0,new BigDecimal("3200").compareTo(stored.getPrice()));
+        assertEquals(List.of("/assets/products/eyewear/gallery-frame/angle.png","/assets/products/eyewear/gallery-frame/side.webp"),stored.getArMetadata().get("gallery"));
+        assertEquals("UNCHANGED",sync.sync(discover(),null,false).getFirst().action());assertEquals(1,products.count());
+    }
+    @Test void galleryRejectsTraversalMissingInvalidDuplicateAndUnboundedImages() throws Exception {
+        var m=manifest("EYEWEAR");var p=folder("eyewear","invalid-gallery",m);
+        Files.writeString(p.resolve("invalid.webp"),"not a real gallery photograph");
+        for(var gallery:List.of(List.of("../outside.png"),List.of("missing.png"),List.of("invalid.webp"),List.of("front.png","front.png"),Collections.nCopies(13,"front.png"))) {
+            m.put("gallery",gallery);write(p,m);assertThrows(IllegalArgumentException.class,()->discover());
+        }
+        m.remove("gallery");
+        for(double value:new double[]{.01,.5,Double.NaN}) {m.put("fitProfile",Map.of("earTargetDepth",value));write(p,m);assertThrows(Exception.class,()->discover());}
+        assertEquals(0,products.count());
+    }
     @Test void eyewearTempleCalibrationPersistsThroughTheExistingIdempotentSync() throws Exception {
         var m=manifest("EYEWEAR");m.put("category","Eyewear");
         var fit=Map.of("templeDepth",.62,"templeSplay",.025,"templeCurve",.065,"templeRootLength",.18,"templeVerticalOffset",-.006,
