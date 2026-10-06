@@ -27,6 +27,49 @@ export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const midpoint = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 const distance = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
 const confidence = (p) => Math.min(p?.visibility ?? 1, p?.presence ?? 1);
+export function containImageRect(imageWidth, imageHeight, canvasWidth, canvasHeight) {
+  const scale = Math.min(canvasWidth / imageWidth, canvasHeight / imageHeight);
+  const width = imageWidth * scale,
+    height = imageHeight * scale;
+  return {
+    x: (canvasWidth - width) / 2,
+    y: (canvasHeight - height) / 2,
+    width,
+    height,
+  };
+}
+export function mapPoseResultToContainedImage(result, rect, dimensions) {
+  if (!result) return result;
+  const landmarks = result.landmarks?.map((point) =>
+    point
+      ? {
+          ...point,
+          x: (rect.x + point.x * rect.width) / dimensions.width,
+          y: (rect.y + point.y * rect.height) / dimensions.height,
+        }
+      : point,
+  );
+  const segmentation = result.segmentation
+    ? {
+        ...result.segmentation,
+        roi: {
+          x:
+            rect.x / dimensions.width +
+            (result.segmentation.roi?.x || 0) * (rect.width / dimensions.width),
+          y:
+            rect.y / dimensions.height +
+            (result.segmentation.roi?.y || 0) * (rect.height / dimensions.height),
+          width: (result.segmentation.roi?.width ?? 1) * (rect.width / dimensions.width),
+          height: (result.segmentation.roi?.height ?? 1) * (rect.height / dimensions.height),
+        },
+      }
+    : result.segmentation;
+  return {
+    ...result,
+    ...(landmarks ? { landmarks } : {}),
+    ...(segmentation ? { segmentation } : {}),
+  };
+}
 const valid = (p) =>
   p &&
   Number.isFinite(p.x) &&

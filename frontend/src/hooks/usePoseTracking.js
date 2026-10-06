@@ -1,6 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { acquirePoseLandmarker, poseIntervalMs } from '../services/poseLandmarker.js';
-import { measureTorso, updateShirtTracking } from '../components/tryon/shirtGeometry.js';
+import {
+  mapPoseResultToContainedImage,
+  measureTorso,
+  updateShirtTracking,
+} from '../components/tryon/shirtGeometry.js';
 import {
   measureTorsoSilhouette,
   updateSilhouetteTracking,
@@ -45,7 +49,7 @@ export function usePoseTracking(source, fit, dimensions, onStatus, onSample, ret
       lastAt = now;
       lastVideo = videoTime;
       try {
-        const result = await detector.detect(input, source.live, now);
+        const detected = await detector.detect(input, source.live, now);
         if (!active) return;
         if (detector.metrics.error) {
           photoDone = true;
@@ -55,6 +59,10 @@ export function usePoseTracking(source, fit, dimensions, onStatus, onSample, ret
           });
           return;
         }
+        const result =
+          source.kind === 'upload'
+            ? mapPoseResultToContainedImage(detected, dimensions.imageRect, dimensions)
+            : detected;
         const measured = measureTorso(
           result,
           dimensions.width,

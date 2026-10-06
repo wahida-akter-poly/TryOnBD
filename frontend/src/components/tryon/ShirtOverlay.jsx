@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'rea
 import { usePoseTracking } from '../../hooks/usePoseTracking.js';
 import { loadShirtAsset } from './shirtAssets.js';
 import { drawShirt } from './shirtWarp.js';
-import { shirtVisibility } from './shirtGeometry.js';
+import { containImageRect, shirtVisibility } from './shirtGeometry.js';
 import { torsoPanelPoint } from './structuredShirtGeometry.js';
 import { armOcclusionMasks, capsulePolygon } from './shirtOcclusion.js';
 
@@ -32,6 +32,11 @@ export default forwardRef(function ShirtOverlay({ source, fit, arDebug, retry, o
     const el = source?.element,
       w = el?.videoWidth || el?.naturalWidth || el?.width || 640;
     const h = el?.videoHeight || el?.naturalHeight || el?.height || 480;
+    if (source?.kind === 'upload') {
+      const width = 640,
+        height = 480;
+      return { width, height, imageRect: containImageRect(w, h, width, height) };
+    }
     const ratio = Math.min(1, 1280 / Math.max(w, h));
     return { width: Math.round(w * ratio), height: Math.round(h * ratio) };
   }, [source]);
@@ -121,7 +126,10 @@ export default forwardRef(function ShirtOverlay({ source, fit, arDebug, retry, o
         frameCtx.translate(frame.width, 0);
         frameCtx.scale(-1, 1);
       }
-      frameCtx.drawImage(input, 0, 0, frame.width, frame.height);
+      if (source.kind === 'upload') {
+        const rect = dimensions.imageRect;
+        frameCtx.drawImage(input, rect.x, rect.y, rect.width, rect.height);
+      } else frameCtx.drawImage(input, 0, 0, frame.width, frame.height);
       frameCtx.restore();
       original.current = frame;
     };

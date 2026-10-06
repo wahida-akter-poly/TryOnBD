@@ -6,6 +6,8 @@ import { PoseLandmarker } from '@mediapipe/tasks-vision';
 import { shirtCalibration } from '../src/data/shirtProducts.js';
 import { shirtPreviewProduct } from './fixtures/shirtProduct.js';
 import {
+  containImageRect,
+  mapPoseResultToContainedImage,
   measureTorso,
   poseToCanvas,
   torsoQuad,
@@ -67,6 +69,60 @@ export function torsoFixture({ scale = 1, x = 0, y = 0, roll = 0, yaw = 0 } = {}
 const fit = shirtCalibration(shirtPreviewProduct);
 const body = (options) => measureTorso(torsoFixture(options), 800, 800);
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-8, `${a} ≠ ${b}`);
+
+test('shirt uploads are contained and pose plus segmentation coordinates share the image rectangle', () => {
+  for (const [imageWidth, imageHeight] of [
+    [600, 800],
+    [1200, 800],
+    [400, 1000],
+  ]) {
+    const dimensions = { width: 640, height: 480 },
+      rect = containImageRect(imageWidth, imageHeight, dimensions.width, dimensions.height),
+      sourceScale = Math.min(rect.width / dimensions.width, rect.height / dimensions.height),
+      result = torsoFixture();
+    result.landmarks = result.landmarks.map((point) =>
+      point
+        ? {
+            ...point,
+            x: 0.5 + ((point.x - 0.5) * sourceScale * dimensions.width) / rect.width,
+            y: 0.5 + ((point.y - 0.5) * sourceScale * dimensions.height) / rect.height,
+          }
+        : point,
+    );
+    const mapped = mapPoseResultToContainedImage(
+      {
+        ...result,
+        segmentation: {
+          width: 100,
+          height: 100,
+          pixels: new Uint8Array(10000),
+          roi: { x: 0.1, y: 0.2, width: 0.8, height: 0.6 },
+        },
+      },
+      rect,
+      dimensions,
+    );
+    assert.ok(rect.x >= 0 && rect.y >= 0);
+    close(rect.x + rect.width / 2, dimensions.width / 2);
+    close(rect.y + rect.height / 2, dimensions.height / 2);
+    close(mapped.landmarks[11].x * dimensions.width, rect.x + result.landmarks[11].x * rect.width);
+    close(
+      mapped.landmarks[11].y * dimensions.height,
+      rect.y + result.landmarks[11].y * rect.height,
+    );
+    close(
+      mapped.segmentation.roi.x,
+      rect.x / dimensions.width + (0.1 * rect.width) / dimensions.width,
+    );
+    const geometry = measureTorso(mapped, dimensions.width, dimensions.height);
+    assert.ok(
+      geometry.shoulderMidpoint.x >= rect.x && geometry.shoulderMidpoint.x <= rect.x + rect.width,
+    );
+    assert.ok(
+      geometry.shoulderMidpoint.y >= rect.y && geometry.shoulderMidpoint.y <= rect.y + rect.height,
+    );
+  }
+});
 
 test('shirt landmark indices match installed official shoulder/elbow/hip connections', () => {
   assert.deepEqual(shirtPoseLandmarks, {
