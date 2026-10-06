@@ -29,8 +29,13 @@ test('live PostgreSQL necklace catalog, details, MediaPipe photo and export', as
   await page.goto('/products?group=Jewelry');
   await expect(page.locator('.product-card')).toHaveCount(necklaces.length);
   await expect(page.locator('a[href*="necklace-preview"]')).toHaveCount(0);
-  const product = necklaces[0];
-  await page.getByRole('link', { name: 'View Details', exact: true }).first().click();
+  const product = necklaces.find((p) => p.name === 'Silver Diamond Necklace');
+  expect(product).toBeTruthy();
+  await page
+    .locator('.product-card')
+    .filter({ has: page.getByRole('heading', { name: product.name, exact: true }) })
+    .getByRole('link', { name: 'View Details', exact: true })
+    .click();
   await expect(page).toHaveURL(new RegExp(`/products/${product.id}$`));
   await expect(page.getByRole('heading', { name: product.name, exact: true })).toBeVisible();
   await expect(page.getByRole('img', { name: product.name, exact: true })).toHaveAttribute(

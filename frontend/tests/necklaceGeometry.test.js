@@ -250,7 +250,7 @@ test('four backend products select calibration without IDs, categories, new asse
     {
       id: 4,
       name: 'Silver Diamond Necklace',
-      imageUrl: '/assets/jewelry/necklaces/silver-diamond-necklace.png',
+      imageUrl: '/assets/products/jewelry/silver-diamond-necklace/front.png',
       expected: 'SHORT',
     },
     {

@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { services } from '../services';
 import { api, errorMessage } from '../services/api';
 import { Button, EmptyState, ErrorState, LoadingState, Price } from '../components/common/UI';
+import { ProductImage } from '../components/product/ProductCard';
 export default function Dashboard() {
   const { section = 'profile' } = useParams();
   const { user, role, state, refreshCatalog, refreshAccount } = useApp();
@@ -148,6 +149,7 @@ export default function Dashboard() {
                       <Link to={`/products/${record.id}`}>
                         <h3>{record.name}</h3>
                       </Link>
+                      <ProductImage product={record} className="catalog-thumbnail" />
                       <Price value={record.price} />
                       <p>Stock: {record.stockQuantity}</p>
                       <p>AR: {record.arType || 'NONE'}</p>

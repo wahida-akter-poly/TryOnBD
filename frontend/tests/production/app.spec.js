@@ -20,8 +20,8 @@ const products = [
     imageUrl: '/missing.png',
     arMetadata: {
       frontAsset: '/missing.png',
-      leftTempleAsset: '/assets/face-ar/sunglasses/modern-clear-left-temple-normalized.png',
-      rightTempleAsset: '/assets/face-ar/sunglasses/modern-clear-right-temple-normalized.png',
+      leftTempleAsset: '/assets/products/eyewear/modern-clear-frame/left-temple.png',
+      rightTempleAsset: '/assets/products/eyewear/modern-clear-frame/right-temple.png',
     },
   },
   {
@@ -31,7 +31,7 @@ const products = [
     price: 30,
     stockQuantity: 1,
     categoryId: 45,
-    imageUrl: '/assets/face-ar/sunglasses/aviator-real.png',
+    imageUrl: '/assets/products/eyewear/classic-aviator/front.png',
   },
   {
     id: 78,
@@ -40,7 +40,7 @@ const products = [
     price: 30,
     stockQuantity: 2,
     categoryId: 46,
-    imageUrl: '/assets/jewelry/necklaces/silver-diamond-necklace.png',
+    imageUrl: '/assets/products/jewelry/silver-diamond-necklace/front.png',
   },
 ];
 async function setup(page, list = products) {
@@ -61,9 +61,7 @@ async function setup(page, list = products) {
     return route.fulfill({ status: 401, json: { message: 'Sign in required' } });
   });
 }
-test('catalog and categories use APIs; broken and missing images stay neutral', async ({
-  page,
-}) => {
+test('catalog distinguishes a missing image from a broken URL', async ({ page }) => {
   await setup(page);
   await page.route('**/missing.png', (route) =>
     route.fulfill({ status: 404, body: 'Image not found' }),
@@ -71,7 +69,9 @@ test('catalog and categories use APIs; broken and missing images stay neutral', 
   await page.goto('/products');
   await expect(page.getByRole('heading', { name: 'API Shirt' })).toBeVisible();
   await expect(page.getByLabel('Category').getByRole('option', { name: 'Jewelry' })).toBeAttached();
-  await expect(page.getByText('No product image uploaded')).toHaveCount(2);
+  await expect(page.getByText('No product image uploaded')).toHaveCount(1);
+  await expect(page.getByText('Product image could not load')).toHaveCount(1);
+  await expect(page.locator('[data-image-status=error]')).toHaveCount(1);
   await page.getByLabel('Category').selectOption('46');
   await expect(page.getByRole('heading', { name: 'API Necklace' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'API Shirt' })).toHaveCount(0);
@@ -114,7 +114,7 @@ test('AR uses real product types with no initial person or preview alias', async
 });
 test('shirt routes to torso studio by arType', async ({ page }) => {
   const list = products.map((p) =>
-    p.id === 1 ? { ...p, imageUrl: '/assets/body-ar/shirts/tshirt-black-front.png' } : p,
+    p.id === 1 ? { ...p, imageUrl: '/assets/products/clothing/black-t-shirt/front.png' } : p,
   );
   await setup(page, list);
   await page.goto('/try-on?productId=1');
@@ -217,7 +217,7 @@ test('seller management fetches own products and writes controlled AR metadata',
   await page.getByLabel('AR type').selectOption('NECKLACE');
   await page
     .getByLabel('Image URL or local asset path')
-    .fill('/assets/jewelry/necklaces/silver-diamond-necklace.png');
+    .fill('/assets/products/jewelry/silver-diamond-necklace/front.png');
   await page.getByLabel('Description', { exact: true }).fill('Seller supplied necklace details');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Create product' })).toBeEnabled();
@@ -228,7 +228,7 @@ test('seller management fetches own products and writes controlled AR metadata',
     sellerId: 77,
     categoryId: 46,
     arType: 'NECKLACE',
-    imageUrl: '/assets/jewelry/necklaces/silver-diamond-necklace.png',
+    imageUrl: '/assets/products/jewelry/silver-diamond-necklace/front.png',
     description: 'Seller supplied necklace details',
   });
 });

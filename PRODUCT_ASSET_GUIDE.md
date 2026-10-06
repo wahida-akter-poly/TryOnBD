@@ -4,7 +4,7 @@ New products use the existing Product API, PostgreSQL catalog, seller/admin dash
 
 ## One-time setup
 
-Use only `E:\AOOP\TryOnBD-PRODUCTION`, branch `feature/backend-driven-production-ui`. Java 21, Node/npm and the existing PostgreSQL instance are required. Use the same `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` environment as your backend. Keep credentials in your shell/environment, never in a product manifest or Git.
+Use only `E:\AOOP\TryOnBD-PRODUCTION`, branch `feature/catalog-product-assets`. Java 21, Node/npm and the existing PostgreSQL instance are required. Use the same `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` environment as your backend. Keep credentials in your shell/environment, never in a product manifest or Git.
 
 For the local PostgreSQL instance used in this project:
 
@@ -195,3 +195,13 @@ The backend must use the same PostgreSQL environment for live browser tests. Pro
 - Live PostgreSQL/API/browser: **3 tests passed**, covering Silver Diamond, Royal Gold Choker CHOKER fitting/export, Modern Clear WebGL, Black T-Shirt fitting/export and unavailable Classic Aviator AR.
 - `npm run build` passed. Formatting of changed files passed. The broader pre-existing formatting check reports six untouched legacy test/fixture/generator files; they were not rewritten for this feature.
 - Anzara's existing owner account was found with CUSTOMER access. Import preserved its ownership and did not change account roles; a SELLER role assignment requires the pending explicit decision or the existing Super Admin workflow. Authorized SELLER/ADMIN/SUPER_ADMIN management was verified in isolated integration/browser tests.
+
+## Existing catalog normalization
+
+Products 1-4 now have explicit `existingProductId` manifests containing their existing approved database values. Sync adopts those rows; it does not allocate replacement IDs. Royal Gold Choker (5) retains its original managed package and metadata. See [the migration and validation record](CATALOG_ASSET_NORMALIZATION.md) for every old/new URL and pending incoming asset.
+
+Modern Clear's package persists the complete measured `fitProfile` and both genuine normalized temple PNGs. The backend returns these in `arMetadata`; the same rigid WebGL engine consumes them. All source-image bytes are preserved. Classic Aviator has its genuine front only: browsing and purchase remain available, full virtual try-on stays unavailable.
+
+Place incomplete original photographs under `frontend/public/assets/incoming-products/<family>/<slug>/` while awaiting business metadata and transparent PNG cutouts. This staging area is outside strict sync discovery. Never place an invalid or missing manifest inside `assets/products/`: the entire sync deliberately fails before catalog writes. Golden Frame's original WebP photos are preserved in this staging area without generating artwork or invented business values.
+
+An empty `imageUrl` displays "No product image uploaded". An invalid URL or failed asset request displays "Product image could not load". Asset acceptance tests require HTTP 200, PNG content/signature and nonzero decoded image dimensions, so Vite's HTML route fallback cannot masquerade as a working product image.

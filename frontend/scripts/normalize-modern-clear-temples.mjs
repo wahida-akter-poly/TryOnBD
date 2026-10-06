@@ -3,7 +3,7 @@
 import { chromium } from '@playwright/test';
 import { readFile, writeFile } from 'node:fs/promises';
 import { measureTempleAlpha } from '../src/components/tryon/templeAssetGeometry.js';
-const root = new URL('../public/assets/face-ar/sunglasses/', import.meta.url);
+const root = new URL('../public/assets/products/eyewear/modern-clear-frame/', import.meta.url);
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
 try {
   const page = await browser.newPage();
@@ -86,7 +86,7 @@ try {
   const calibration = {};
   for (const [i, side] of ['left', 'right'].entries()) {
     const file = `modern-clear-${side}-temple-normalized.png`;
-    await writeFile(new URL(file, root), Buffer.from(results[i].png, 'base64'));
+    await writeFile(new URL(`${side}-temple.png`, root), Buffer.from(results[i].png, 'base64'));
     const { png, ...measurements } = results[i];
     calibration[file] = measurements;
     console.log(JSON.stringify({ file, ...measurements }));

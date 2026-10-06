@@ -211,7 +211,7 @@ test('optional Pose diagnostics mirror, hold and fall back without changing stab
 test('real Modern Clear assembly stays outside lenses, changes in yaw, scales, and captures once', async ({
   page,
 }) => {
-  const base = '/assets/face-ar/sunglasses/modern-clear-';
+  const base = '/assets/products/eyewear/modern-clear-frame/';
   const cartoons = [];
   page.on('request', (r) => {
     if (/face-ar\/clear\.(png|svg)/.test(r.url())) cartoons.push(r.url());
@@ -246,7 +246,7 @@ test('real Modern Clear assembly stays outside lenses, changes in yaw, scales, a
   await page.getByRole('button', { name: 'Modern Clear Frame', exact: true }).click();
   await expect(
     page.getByRole('button', { name: 'Modern Clear Frame', exact: true }).locator('img'),
-  ).toHaveAttribute('src', `${base}front-clean.png`);
+  ).toHaveAttribute('src', `${base}front.png`);
   await page.getByRole('button', { name: 'Camera', exact: true }).click();
   await expect(page.getByText('Frame fitted', { exact: true })).toBeVisible();
   const draws = () =>
@@ -254,17 +254,16 @@ test('real Modern Clear assembly stays outside lenses, changes in yaw, scales, a
       const all = window.assemblyDraws || [];
       // Eight triangles form one temple pass; verify one front image and exactly
       // two contiguous arm passes, without confusing subdivisions with overlays.
-      if (all.length && all.filter((d) => d.src.endsWith('front-clean.png')).length !== 1)
+      if (
+        all.length &&
+        all.filter((d) => d.src.endsWith('/modern-clear-frame/front.png')).length !== 1
+      )
         throw new Error('Duplicate front overlay');
       return all.filter((d, i) => i === 0 || d.src !== all[i - 1].src);
     });
   await expect
     .poll(async () => (await draws())?.map((d) => d.src))
-    .toEqual([
-      `${base}left-temple-normalized.png`,
-      `${base}front-clean.png`,
-      `${base}right-temple-normalized.png`,
-    ]);
+    .toEqual([`${base}left-temple.png`, `${base}front.png`, `${base}right-temple.png`]);
   await expect(page.locator('.tryon-canvas')).toHaveCount(1);
   const alpha = await page.evaluate(async (src) => {
     const image = new Image();
@@ -282,7 +281,7 @@ test('real Modern Clear assembly stays outside lenses, changes in yaw, scales, a
       [700, 140],
       [780, 200],
     ].map(([x, y]) => ctx.getImageData(x, y, 1, 1).data[3]);
-  }, `${base}front-clean.png`);
+  }, `${base}front.png`);
   expect(alpha).toEqual([0, 0, 0, 0]);
   await page.evaluate(() => {
     window.pose.rawYaw = 0.744;
@@ -290,11 +289,7 @@ test('real Modern Clear assembly stays outside lenses, changes in yaw, scales, a
   });
   await expect
     .poll(async () => (await draws())?.map((d) => d.src))
-    .toEqual([
-      `${base}left-temple-normalized.png`,
-      `${base}front-clean.png`,
-      `${base}right-temple-normalized.png`,
-    ]);
+    .toEqual([`${base}left-temple.png`, `${base}front.png`, `${base}right-temple.png`]);
   await expect
     .poll(async () => {
       const d = await draws();
@@ -309,11 +304,7 @@ test('real Modern Clear assembly stays outside lenses, changes in yaw, scales, a
   });
   await expect
     .poll(async () => (await draws())?.map((d) => d.src))
-    .toEqual([
-      `${base}right-temple-normalized.png`,
-      `${base}front-clean.png`,
-      `${base}left-temple-normalized.png`,
-    ]);
+    .toEqual([`${base}right-temple.png`, `${base}front.png`, `${base}left-temple.png`]);
   await expect
     .poll(async () => {
       const d = await draws();
@@ -706,9 +697,8 @@ test('missing Modern Clear temple reports unavailable and never renders a partia
   page,
 }) => {
   await simulatedStudio(page, { debug: false, frameFixtures: false });
-  await page.route(
-    '**/assets/face-ar/sunglasses/modern-clear-left-temple-normalized.png',
-    (route) => route.abort(),
+  await page.route('**/assets/products/eyewear/modern-clear-frame/left-temple.png', (route) =>
+    route.abort(),
   );
   await page.getByRole('button', { name: 'Modern Clear Frame', exact: true }).click();
   await page.getByRole('button', { name: 'Camera', exact: true }).click();
@@ -724,7 +714,7 @@ test('clean studio uses the real Aviator everywhere, fits live, captures and dow
   request,
 }) => {
   test.setTimeout(120000);
-  const src = '/assets/face-ar/sunglasses/aviator-real.png';
+  const src = '/assets/products/eyewear/classic-aviator/front.png';
   const response = await request.get(src);
   expect(response.status()).toBe(200);
   expect(response.headers()['content-type']).toContain('image/png');
@@ -819,7 +809,9 @@ test('clean photo input fits automatically and missing real assets never load ca
   page.on('request', (r) => {
     if (/overlay-glasses\.svg/.test(r.url())) cartoons.push(r.url());
   });
-  await page.route('**/assets/face-ar/sunglasses/aviator-real.png', (route) => route.abort());
+  await page.route('**/assets/products/eyewear/classic-aviator/front.png', (route) =>
+    route.abort(),
+  );
   await page.reload();
   await page.getByRole('button', { name: 'Camera', exact: true }).click();
   await expect(

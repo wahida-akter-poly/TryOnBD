@@ -236,7 +236,7 @@ test('sleeves respond to elbows while seams, collar and torso stay attached and 
 test('product calibration remains local, mergeable and rejects invalid source metadata', () => {
   assert.equal(shirtPreviewProduct.previewOnly, true);
   assert.equal(shirtPreviewProduct.stockQuantity, 0);
-  assert.equal(fit.asset, '/assets/body-ar/shirts/tshirt-black-front.png');
+  assert.equal(fit.asset, '/assets/products/clothing/black-t-shirt/front.png');
   const custom = shirtCalibration({ shirtAR: { widthMultiplier: 1.1, collarOffsetY: 0.02 } });
   const g = torsoQuad(body(), custom);
   assert.ok(g.collar.y > body().shoulderMidpoint.y);
@@ -457,7 +457,7 @@ test('structured source calibration measures real collar/seams/cuffs/hem and kee
     createHash('sha256')
       .update(
         readFileSync(
-          new URL('../public/assets/body-ar/shirts/tshirt-black-front.png', import.meta.url),
+          new URL('../public/assets/products/clothing/black-t-shirt/front.png', import.meta.url),
         ),
       )
       .digest('hex')
@@ -704,7 +704,7 @@ test('accepted Pose measurement geometry and reviewed silhouette integration are
 test('real eyewear product pixels stay byte-for-byte unchanged', () => {
   for (const [path, hash] of [
     [
-      'public/assets/face-ar/sunglasses/modern-clear-left-temple-normalized.png',
+      'public/assets/products/eyewear/modern-clear-frame/left-temple.png',
       'e0c67dd82682115d803335d0d885adf61b6f4f462defcb4fe4890c0d1e3ea48a',
     ],
   ])

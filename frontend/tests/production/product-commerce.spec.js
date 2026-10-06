@@ -116,7 +116,7 @@ test('existing management form retains the imported CLOTHING alias', async ({ pa
   const garment = {
     ...product,
     arType: 'CLOTHING',
-    imageUrl: '/assets/body-ar/shirts/tshirt-black-front.png',
+    imageUrl: '/assets/products/clothing/black-t-shirt/front.png',
     arMetadata: null,
   };
   await page.route('**/api/account/products', (route) => route.fulfill({ json: [garment] }));

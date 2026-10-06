@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { services } from '../../services';
 import { errorMessage } from '../../services/api';
 import { Button, EmptyState, ErrorState, Price, LoadingState } from '../../components/common/UI';
+import { ProductImage } from '../../components/product/ProductCard';
 export default function Checkout() {
   const {
     state,
@@ -62,6 +63,9 @@ export default function Checkout() {
           <fieldset disabled={busy} className="face-fieldset">
             {items.map((item) => (
               <article className="panel cart-row" key={item.productId}>
+                {item.product && (
+                  <ProductImage product={item.product} className="catalog-thumbnail" />
+                )}
                 <Link to={`/products/${item.productId}`}>
                   {item.product?.name || `Product ${item.productId}`}
                 </Link>

@@ -7,18 +7,23 @@ export function ProductImage({ product, className = '', ...props }) {
   const src = imageSource(product.imageUrl);
   const [loaded, setLoaded] = useState(null),
     [failed, setFailed] = useState(null);
+  const unavailable = Boolean(product.imageUrl?.trim());
   if (!src || failed === src)
     return (
       <div
         className={`product-image-empty ${className}`}
         role="img"
-        aria-label={`${product.name}: no product image uploaded`}
+        data-image-status={unavailable ? 'error' : 'missing'}
+        aria-label={`${product.name}: ${unavailable ? 'product image could not load' : 'no product image uploaded'}`}
       >
-        No product image uploaded
+        {unavailable ? 'Product image could not load' : 'No product image uploaded'}
       </div>
     );
   return (
-    <div className={`product-image-wrap ${className}`}>
+    <div
+      className={`product-image-wrap ${className}`}
+      data-image-status={loaded === src ? 'loaded' : 'loading'}
+    >
       {loaded !== src && (
         <span role="status" className="image-loading">
           Loading image...

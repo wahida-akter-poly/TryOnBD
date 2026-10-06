@@ -2,7 +2,7 @@
 // The 3q photograph is a visual hinge/shape reference, never a rendered overlay.
 import { chromium } from '@playwright/test';
 import { readFile, writeFile } from 'node:fs/promises';
-const root = new URL('../public/assets/face-ar/sunglasses/', import.meta.url);
+const root = new URL('../public/assets/products/eyewear/modern-clear-frame/', import.meta.url);
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
 try {
   const page = await browser.newPage();
@@ -170,7 +170,10 @@ try {
     return [crop(c), left, right].map((out) => out.toDataURL('image/png').split(',')[1]);
   }, sources);
   for (const [i, name] of ['front-clean', 'left-temple', 'right-temple'].entries()) {
-    await writeFile(new URL(`modern-clear-${name}.png`, root), Buffer.from(results[i], 'base64'));
+    await writeFile(
+      new URL(i === 0 ? 'front.png' : `modern-clear-${name}.png`, root),
+      Buffer.from(results[i], 'base64'),
+    );
     console.log(`Saved modern-clear-${name}.png`);
   }
 } finally {

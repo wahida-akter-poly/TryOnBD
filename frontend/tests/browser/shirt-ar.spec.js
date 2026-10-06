@@ -42,7 +42,7 @@ async function installPoseFixture(page, debug = false, assetAvailable = false) {
   await page.route('**/api/**', (r) => r.fulfill({ json: {} }));
   // Absence is deterministic even if the owner adds the real PNG later.
   if (!assetAvailable)
-    await page.route('**/assets/body-ar/shirts/tshirt-black-front.png*', (r) =>
+    await page.route('**/assets/products/clothing/black-t-shirt/front.png*', (r) =>
       r.fulfill({ status: 404, body: '' }),
     );
   await page.addInitScript((pose) => {
@@ -317,7 +317,7 @@ test('working shirt PNG follows torso pixels and captures/downloads the exact co
   page,
 }) => {
   const path = new URL(
-    '../../public/assets/body-ar/shirts/tshirt-black-front.png',
+    '../../public/assets/products/clothing/black-t-shirt/front.png',
     import.meta.url,
   );
   const available = await readFile(path).then(
@@ -346,8 +346,8 @@ test('working shirt PNG follows torso pixels and captures/downloads the exact co
       .toBeCloseTo(-(options.roll || 0), 3);
     const coverage = await page.evaluate(async () => {
       const { shirtBodyPoint } = await import('/src/components/tryon/shirtWarp.js');
-      const {shirtCalibration}=await import('/src/data/shirtProducts.js');
-      const {shirtPreviewProduct}=await import('/tests/fixtures/shirtProduct.js');
+      const { shirtCalibration } = await import('/src/data/shirtProducts.js');
+      const { shirtPreviewProduct } = await import('/tests/fixtures/shirtProduct.js');
       const canvas = document.querySelector('canvas[aria-label="T-shirt try-on canvas"]');
       const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
       const g = window.__tryOnShirtDebug.geometry,
@@ -408,7 +408,7 @@ test('working shirt PNG loads measured alpha bounds in clean photo mode and expo
   page,
 }) => {
   const assetPath = new URL(
-    '../../public/assets/body-ar/shirts/tshirt-black-front.png',
+    '../../public/assets/products/clothing/black-t-shirt/front.png',
     import.meta.url,
   );
   test.skip(
@@ -429,7 +429,7 @@ test('working shirt PNG loads measured alpha bounds in clean photo mode and expo
   expect(await page.evaluate(() => window.__tryOnShirtDebug)).toBeUndefined();
   const measured = await page.evaluate(async () => {
     const { loadShirtAsset } = await import('/src/components/tryon/shirtAssets.js');
-    const asset = await loadShirtAsset('/assets/body-ar/shirts/tshirt-black-front.png');
+    const asset = await loadShirtAsset('/assets/products/clothing/black-t-shirt/front.png');
     return {
       ...asset.bounds,
       sourceWidth: asset.image.naturalWidth,
@@ -454,12 +454,12 @@ test('shirt retries a missing working PNG without reopening the camera or pose w
   page,
 }) => {
   const png = await readFile(
-    new URL('../../public/assets/body-ar/shirts/tshirt-black-front.png', import.meta.url),
+    new URL('../../public/assets/products/clothing/black-t-shirt/front.png', import.meta.url),
   ).catch(() => null);
   test.skip(!png, 'REAL_SHIRT_ASSET_REQUIRED');
   await installPoseFixture(page, false, true);
   let added = false;
-  await page.route('**/assets/body-ar/shirts/tshirt-black-front.png*', (r) =>
+  await page.route('**/assets/products/clothing/black-t-shirt/front.png*', (r) =>
     added
       ? r.fulfill({ contentType: 'image/png', body: png })
       : r.fulfill({ status: 404, body: '' }),

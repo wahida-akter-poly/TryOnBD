@@ -1,0 +1,12 @@
+{
+  "name": "Silver Diamond Necklace",
+  "description": "Product details and pricing pending seller review.",
+  "price": 0.0,
+  "stockQuantity": 0,
+  "arType": "NECKLACE",
+  "sellerId": 2,
+  "category": "Jewelry",
+  "existingProductId": 4,
+  "frontAsset": "front.png",
+  "style": "SHORT"
+}

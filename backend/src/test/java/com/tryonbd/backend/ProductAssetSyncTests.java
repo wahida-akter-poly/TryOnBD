@@ -46,6 +46,34 @@ class ProductAssetSyncTests {
     void png(Path file) throws Exception { BufferedImage image = new BufferedImage(4, 4, BufferedImage.TYPE_INT_ARGB); image.setRGB(1,1,0xff998877); ImageIO.write(image, "png", file.toFile()); }
     void write(Path folder, Map<String, Object> m) throws Exception { Files.writeString(folder.resolve("product.json"), json.writeValueAsString(m)); }
     List<ProductAssetPackage> discover() throws Exception { return ProductAssetPackage.discover(root); }
+    @Test void legacyPackageMigrationKeepsIdsBusinessValuesAndSalesOnRepeatSync() throws Exception {
+        Category category=new Category();category.setCategoryName("Jewelry");category.setDescription("Unchanged category");categories.save(category);
+        List<Long> ids=new ArrayList<>();
+        for(int i=1;i<=5;i++) {
+            Product product=new Product();product.setName("Existing product "+i);product.setDescription("Existing description "+i);
+            product.setPrice(BigDecimal.valueOf(i*100));product.setStockQuantity(i*3);product.setArType("NECKLACE");
+            product.setImageUrl("/legacy/"+i+".png");product.setCategory(category);product.setSeller(seller);products.saveAndFlush(product);
+            ids.add(product.getId());var m=manifest("NECKLACE");m.put("name",product.getName());m.put("description",product.getDescription());
+            m.put("price",i*100);m.put("stockQuantity",i*3);m.put("existingProductId",product.getId());m.put("style",i==5?"CHOKER":"SHORT");
+            folder("jewelry","existing-"+i,m);
+        }
+        long count=products.count();var first=sync.sync(discover(),null,false);
+        assertEquals(ids,first.stream().map(ProductAssetSyncService.Result::productId).toList());
+        assertTrue(first.stream().allMatch(result->result.action().equals("UPDATED")));entities.flush();entities.clear();
+        for(int i=1;i<=5;i++) {
+            Product product=products.findById(ids.get(i-1)).orElseThrow();assertEquals("Existing product "+i,product.getName());
+            assertEquals("Existing description "+i,product.getDescription());assertEquals(0,BigDecimal.valueOf(i*100).compareTo(product.getPrice()));
+            assertEquals(i*3,product.getStockQuantity());assertEquals(category.getId(),product.getCategory().getId());
+            assertEquals(seller.getId(),product.getSeller().getId());assertEquals("NECKLACE",product.getArType());
+            assertEquals("/assets/products/jewelry/existing-"+i+"/front.png",product.getImageUrl());
+        }
+        Product sold=products.findById(ids.getFirst()).orElseThrow();sold.setStockQuantity(1);products.saveAndFlush(sold);entities.clear();
+        var second=sync.sync(discover(),null,false);assertEquals(count,products.count());
+        assertTrue(second.stream().allMatch(result->result.action().equals("UNCHANGED")));
+        assertEquals(ids,second.stream().map(ProductAssetSyncService.Result::productId).toList());
+        assertEquals(1,products.findById(ids.getFirst()).orElseThrow().getStockQuantity());assertEquals(1,categories.count());
+    }
+
     @Test void eyewearTempleCalibrationPersistsThroughTheExistingIdempotentSync() throws Exception {
         var m=manifest("EYEWEAR");m.put("category","Eyewear");
         var fit=Map.of("templeDepth",.62,"templeSplay",.025,"templeCurve",.065,"templeRootLength",.18,"templeVerticalOffset",.012);

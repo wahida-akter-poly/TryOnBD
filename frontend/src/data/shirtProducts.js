@@ -10,7 +10,7 @@ export const defaultShirtCalibration = Object.freeze({
   silhouette: shirtSilhouetteCalibration,
   sourceRegions: structuredSourceRegions,
   arType: 'tshirt',
-  asset: '/assets/body-ar/shirts/tshirt-black-front.png',
+  asset: '/assets/products/clothing/black-t-shirt/front.png',
   widthMultiplier: 1,
   heightMultiplier: 1,
   shoulderPadding: 0.06,

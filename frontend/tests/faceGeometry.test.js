@@ -234,8 +234,8 @@ test('known Modern Clear asset retains calibrated three-part assembly', () => {
   const style = accessoryStyles.find((s) => s.id === 'clear');
   const asset = sunglassesAssetFor({ imageUrl: style.frontFrameSrc }, style);
   assert.equal(asset.src, style.frontFrameSrc);
-  assert.match(asset.leftTempleSrc, /modern-clear-left-temple-normalized/);
-  assert.match(asset.rightTempleSrc, /modern-clear-right-temple-normalized/);
+  assert.match(asset.leftTempleSrc, /modern-clear-frame\/left-temple\.png/);
+  assert.match(asset.rightTempleSrc, /modern-clear-frame\/right-temple\.png/);
 });
 
 for (const [direction, yaw] of [
@@ -609,15 +609,15 @@ test('normalized real asset calibration removes PCA rotation and preserves physi
 test('real normalized temple and front product PNGs retain their original pixels', () => {
   for (const [path, hash] of [
     [
-      'public/assets/face-ar/sunglasses/modern-clear-left-temple-normalized.png',
+      'public/assets/products/eyewear/modern-clear-frame/left-temple.png',
       'e0c67dd82682115d803335d0d885adf61b6f4f462defcb4fe4890c0d1e3ea48a',
     ],
     [
-      'public/assets/face-ar/sunglasses/modern-clear-right-temple-normalized.png',
+      'public/assets/products/eyewear/modern-clear-frame/right-temple.png',
       '2d89fb7014346ec24435bf583cf511260ebc37beeffd3df9b3a05f7dc10861ed',
     ],
     [
-      'public/assets/face-ar/sunglasses/modern-clear-front-clean.png',
+      'public/assets/products/eyewear/modern-clear-frame/front.png',
       '1a79f53b743a09d66cc065d68b33768781b8eea3e92bbc4493d6064afaf2d6cb',
     ],
   ]) {

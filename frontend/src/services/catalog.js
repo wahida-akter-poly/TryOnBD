@@ -1,4 +1,4 @@
-import { sunglassesAssetFor } from '../data/faceAccessories.js';
+import { sunglassesAssetFor, sunglassesStyles } from '../data/faceAccessories.js';
 
 export function arEngine(value) {
   const type = String(value || '')
@@ -31,9 +31,9 @@ export function normalizeProduct(product) {
     ...(engine === 'sunglasses'
       ? {
           accessoryKind: 'sunglasses',
-          accessoryStyle: /modern-clear-front-clean/.test(product.imageUrl || '')
-            ? 'clear'
-            : 'aviator',
+          accessoryStyle:
+            sunglassesStyles.find((style) => style.src === product.imageUrl?.split(/[?#]/)[0])
+              ?.id || 'aviator',
         }
       : {}),
   };

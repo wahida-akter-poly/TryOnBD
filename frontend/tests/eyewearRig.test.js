@@ -271,7 +271,7 @@ test('several backend products reuse the same rig and dynamic real front image w
   const items = [
     { id: 2, imageUrl: fit.src },
     { id: 300, imageUrl: fit.src },
-    { id: 3, imageUrl: '/assets/face-ar/sunglasses/aviator-real.png' },
+    { id: 3, imageUrl: '/assets/products/eyewear/classic-aviator/front.png' },
     { id: 777, imageUrl: 'https://store.example/real-frame.png' },
   ];
   for (const p of items) {

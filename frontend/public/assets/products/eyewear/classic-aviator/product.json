@@ -1,0 +1,11 @@
+{
+  "name": "Classic Aviator",
+  "description": "Classic aviator eyewear with face-tracking virtual try-on",
+  "price": 1599.0,
+  "stockQuantity": 22,
+  "arType": "EYEWEAR",
+  "sellerId": 1,
+  "category": "Eyewear",
+  "existingProductId": 3,
+  "frontAsset": "front.png"
+}

@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
-const front = '/assets/face-ar/sunglasses/modern-clear-front-clean.png';
-const left = '/assets/face-ar/sunglasses/modern-clear-left-temple-normalized.png';
-const right = '/assets/face-ar/sunglasses/modern-clear-right-temple-normalized.png';
+const front = '/assets/products/eyewear/modern-clear-frame/front.png';
+const left = '/assets/products/eyewear/modern-clear-frame/left-temple.png';
+const right = '/assets/products/eyewear/modern-clear-frame/right-temple.png';
 const manifest = JSON.parse(
   await readFile('public/assets/products/jewelry/royal-gold-choker/product.json', 'utf8'),
 );
@@ -25,7 +25,7 @@ const aviator = {
   arType: 'EYEWEAR',
   price: 1599,
   stockQuantity: 22,
-  imageUrl: '/assets/face-ar/sunglasses/aviator-real.png',
+  imageUrl: '/assets/products/eyewear/classic-aviator/front.png',
 };
 const importedEyewear = {
   id: 902,
@@ -136,7 +136,7 @@ test('SHIRT, TSHIRT and CLOTHING products use their dynamic backend front in the
     arType,
     price: 10,
     stockQuantity: 2,
-    imageUrl: `/assets/body-ar/shirts/tshirt-black-front.png?variant=${i}`,
+    imageUrl: `/assets/products/clothing/black-t-shirt/front.png?variant=${i}`,
     arMetadata: { fitProfile: { widthMultiplier: 1 } },
   }));
   await catalog(page, products);

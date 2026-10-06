@@ -151,7 +151,7 @@ const realFrames = {
   price: 1899,
   stockQuantity: 18,
   categoryId: 1,
-  imageUrl: '/assets/face-ar/sunglasses/modern-clear-front-clean.png',
+  imageUrl: '/assets/products/eyewear/modern-clear-frame/front.png',
 };
 async function setup(page) {
   await page.route('**/api/**', (route) => {
@@ -348,7 +348,7 @@ test('real Aviator lens material removes baked rear-arm ghosts while keeping ori
   await page.goto('/try-on?productId=2');
   await page.addScriptTag({ content: harness });
   const data = await page.evaluate(() => window.checkLensSurface());
-  expect(data.src).toBe('/assets/face-ar/sunglasses/aviator-real.png');
+  expect(data.src).toBe('/assets/products/eyewear/classic-aviator/front.png');
   expect(data.source).toBe(data.src);
   expect(data.hardware).toEqual(data.originalHardware);
   // A dark rear arm differs in all colour channels, not only red.

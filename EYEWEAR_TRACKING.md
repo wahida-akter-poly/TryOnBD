@@ -50,13 +50,13 @@ Coordinates refer to visible front alpha bounds; dimensions refer to recovered p
 }
 ```
 
-Modern Clear retains its existing real asset URLs:
+Modern Clear now uses standardized package URLs with the same original image bytes:
 
-- `/assets/face-ar/sunglasses/modern-clear-front-clean.png`
-- `/assets/face-ar/sunglasses/modern-clear-left-temple-normalized.png`
-- `/assets/face-ar/sunglasses/modern-clear-right-temple-normalized.png`
+- `/assets/products/eyewear/modern-clear-frame/front.png`
+- `/assets/products/eyewear/modern-clear-frame/left-temple.png`
+- `/assets/products/eyewear/modern-clear-frame/right-temple.png`
 
-The legacy manifest is keyed by front URL, never database ID. Camera distance remains automatically estimated unless a supported fit override is supplied.
+Product 2 now persists this calibration and the complete part paths through its standardized product manifest. The compatibility registry is keyed by front URL, never database ID. Camera distance remains automatically estimated unless a supported fit override is supplied. See [the catalog migration record](CATALOG_ASSET_NORMALIZATION.md).
 
 ## Two future eyewear packages
 
