@@ -63,6 +63,32 @@ class ControllerRequestTests {
  @Test void sessionsCannotSpoofIdentityOrBeReadByOtherUsers() throws Exception {mvc.perform(post("/api/try-on-sessions").header("Authorization",token(customer)).contentType("application/json").content("{\"userId\":"+other.getId()+",\"productId\":"+product.getId()+",\"tryOnType\":\"NECKLACE\",\"inputImageUrl\":\"urn:tryonbd:capture:photo:640x480\"}")).andExpect(status().isCreated()).andExpect(jsonPath("$.userId").value(customer.getId())).andExpect(jsonPath("$.tryOnType").value("SHIRT"));Long id=sessions.findAll().getFirst().getId();mvc.perform(get("/api/try-on-sessions/"+id).header("Authorization",token(other))).andExpect(status().isForbidden());mvc.perform(get("/api/try-on-sessions").header("Authorization",token(other))).andExpect(content().json("[]"));}
  @Test void sellersCannotManageOtherProductsAndCanCreateFreeProductsWithoutImages() throws Exception {Product foreignProduct=new Product();foreignProduct.setName("Other");foreignProduct.setPrice(BigDecimal.ONE);foreignProduct.setStockQuantity(1);foreignProduct.setCategory(category);foreignProduct.setSeller(otherSeller);products.save(foreignProduct);mvc.perform(delete("/api/products/"+foreignProduct.getId()).header("Authorization",token(sellerUser))).andExpect(status().isForbidden());String body="{\"sellerId\":"+otherSeller.getId()+",\"categoryId\":"+category.getId()+",\"name\":\"New Shirt\",\"price\":0,\"stockQuantity\":0,\"arType\":\"TSHIRT\"}";mvc.perform(post("/api/products").header("Authorization",token(sellerUser)).contentType("application/json").content(body)).andExpect(status().isCreated()).andExpect(jsonPath("$.sellerId").value(seller.getId())).andExpect(jsonPath("$.arType").value("TSHIRT"));}
  @Test void onlySuperAdminCanAssignRoles() throws Exception {String path="/api/users/"+other.getId()+"/role";mvc.perform(put(path).header("Authorization",token(admin)).contentType("application/json").content("{\"role\":\"SELLER\"}")).andExpect(status().isForbidden());mvc.perform(put(path).header("Authorization",token(superAdmin)).contentType("application/json").content("{\"role\":\"SELLER\"}")).andExpect(status().isOk()).andExpect(jsonPath("$.role").value("SELLER"));}
+ @Test void superAdminCanCreateAdminUsingExistingUserAndRoleApis() throws Exception {
+   String body="{\"fullName\":\"Managed Admin\",\"email\":\"managed-admin@test.example\",\"password\":\"secret123\",\"phone\":\"01700000000\",\"address\":\"Dhaka\"}";
+   mvc.perform(post("/api/users").header("Authorization",token(superAdmin)).contentType("application/json").content(body))
+     .andExpect(status().isCreated()).andExpect(jsonPath("$.role").value("CUSTOMER"));
+   User created=users.findByEmail("managed-admin@test.example").orElseThrow();
+   assertTrue(new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().matches("secret123",created.getPassword()));
+   String rolePath="/api/users/"+created.getId()+"/role";
+   mvc.perform(put(rolePath).header("Authorization",token(admin)).contentType("application/json").content("{\"role\":\"ADMIN\"}")).andExpect(status().isForbidden());
+   mvc.perform(put(rolePath).header("Authorization",token(superAdmin)).contentType("application/json").content("{\"role\":\"ADMIN\"}"))
+     .andExpect(status().isOk()).andExpect(jsonPath("$.role").value("ADMIN"));
+ }
+ @Test void adminsSeeSystemTryOnSessionsButOtherRolesStayScoped() throws Exception {
+   String payload="{\"productId\":"+product.getId()+",\"tryOnType\":\"SHIRT\",\"inputImageUrl\":\"urn:tryonbd:capture:upload:640x480\"}";
+   mvc.perform(post("/api/try-on-sessions").header("Authorization",token(customer)).contentType("application/json").content(payload)).andExpect(status().isCreated());
+   mvc.perform(post("/api/try-on-sessions").header("Authorization",token(other)).contentType("application/json").content(payload)).andExpect(status().isCreated());
+   mvc.perform(get("/api/try-on-sessions").header("Authorization",token(customer))).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
+   mvc.perform(get("/api/try-on-sessions").header("Authorization",token(sellerUser))).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+   mvc.perform(get("/api/try-on-sessions").header("Authorization",token(admin))).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2));
+   mvc.perform(get("/api/try-on-sessions").header("Authorization",token(superAdmin))).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2));
+ }
+ @Test void adminCannotManageSuperAdminAccount() throws Exception {
+   String update="{\"fullName\":\"Super Admin\",\"email\":\"super@test.example\",\"phone\":\"01700000000\",\"address\":\"Dhaka\"}";
+   mvc.perform(put("/api/users/"+superAdmin.getId()).header("Authorization",token(admin)).contentType("application/json").content(update)).andExpect(status().isForbidden());
+   mvc.perform(delete("/api/users/"+superAdmin.getId()).header("Authorization",token(admin))).andExpect(status().isForbidden());
+   mvc.perform(put("/api/users/"+superAdmin.getId()+"/role").header("Authorization",token(admin)).contentType("application/json").content("{\"role\":\"ADMIN\"}")).andExpect(status().isForbidden());
+ }
  @Test void realLoginRejectsInvalidPasswordAndRestoresUser() throws Exception {
  mvc.perform(post("/api/auth/login").contentType("application/json").content("{\"email\":\"customer@test.example\",\"password\":\"wrong\"}")).andExpect(status().isUnauthorized());
  mvc.perform(post("/api/auth/login").contentType("application/json").content("{\"email\":\"customer@test.example\",\"password\":\"secret123\"}")).andExpect(status().isOk()).andExpect(jsonPath("$.accessToken").isString()).andExpect(jsonPath("$.user.password").doesNotExist());

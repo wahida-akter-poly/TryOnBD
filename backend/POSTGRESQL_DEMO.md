@@ -78,7 +78,9 @@ $env:DB_PASSWORD = "postgres"
 
 The seed is idempotent and refuses to proceed if Seller ID 2 is not Anzara or either demo user has
 an incompatible seller-profile link. Demo logins: `customer@tryonbd.demo` / `Customer@123` and
-`anzara@tryonbd.demo` / `Anzara@123`.
+`anzara@tryonbd.demo` / `Anzara@123`. It also creates or updates the BCrypt-backed admin
+`admin@tryonbd.demo` / `Admin@123` and super-admin `superadmin@tryonbd.demo` / `SuperAdmin@123`.
+Administrator users are never linked to seller profiles.
 
 Look for Hikari PostgreSQL connection, Hibernate EntityManagerFactory initialization, and Tomcat on port 8080.
 

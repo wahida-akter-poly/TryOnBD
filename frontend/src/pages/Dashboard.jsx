@@ -8,28 +8,65 @@ import { ProductImage } from '../components/product/ProductCard';
 export default function Dashboard() {
   const { section: routeSection } = useParams();
   const location = useLocation();
-  const section =
-    routeSection || (location.pathname === '/seller/dashboard/products' ? 'products' : 'profile');
   const { user, role, state, refreshCatalog, refreshAccount } = useApp();
+  const isAdminArea = /^\/(?:admin|super-admin)\/dashboard(?:\/|$)/.test(location.pathname);
+  const section =
+    routeSection ||
+    (location.pathname === '/seller/dashboard/products'
+      ? 'products'
+      : isAdminArea
+        ? 'overview'
+        : 'profile');
   const [records, setRecords] = useState([]),
     [sellers, setSellers] = useState([]),
     [seller, setSeller] = useState(null),
+    [overview, setOverview] = useState(null),
     [error, setError] = useState(''),
     [loading, setLoading] = useState(false),
     [editing, setEditing] = useState(null),
     [revision, setRevision] = useState(0),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [search, setSearch] = useState(''),
+    [recordFilter, setRecordFilter] = useState('all');
   const admin = ['admin', 'super_admin'].includes(role);
   const allowed =
     section === 'profile' ||
     (role === 'customer' && ['orders', 'try-on-history'].includes(section)) ||
     (role === 'seller' && section === 'products') ||
-    (admin && ['users', 'sellers', 'products', 'categories', 'orders'].includes(section));
+    (admin &&
+      [
+        'overview',
+        'users',
+        'admins',
+        'sellers',
+        'products',
+        'categories',
+        'orders',
+        'try-on-sessions',
+      ].includes(section) &&
+      (section !== 'admins' || role === 'super_admin'));
   async function load() {
     setLoading(true);
     setRecords([]);
     setError('');
     try {
+      if (section === 'overview' && admin) {
+        const [users, sellersResponse, products, orders, sessions] = await Promise.all([
+          services.users.list(),
+          services.sellers.list(),
+          services.products.list(),
+          services.orders.list(),
+          services.sessions.list(),
+        ]);
+        setOverview({
+          users: users.data,
+          sellers: sellersResponse.data,
+          products: products.data,
+          orders: orders.data,
+          sessions: sessions.data,
+        });
+        return;
+      }
       if (section === 'profile') {
         if (role === 'seller') {
           const [profile, products] = await Promise.all([
@@ -54,7 +91,13 @@ export default function Dashboard() {
         setSeller(profile.data);
         return;
       }
-      const { data } = await services[section].list();
+      if (section === 'admins') {
+        const { data } = await services.users.list();
+        setRecords(data.filter((record) => record.role === 'ADMIN'));
+        return;
+      }
+      const resource = section === 'try-on-sessions' ? services.sessions : services[section];
+      const { data } = await resource.list();
       setRecords(data);
       if (section === 'products') {
         const response = await services.sellers.list();
@@ -87,13 +130,73 @@ export default function Dashboard() {
   if (!allowed) return <ErrorState message="You cannot access this section." />;
   const list =
     role === 'customer' ? (section === 'orders' ? state.orders : state.sessions) : records;
+  const visibleRecords = list.filter((record) => {
+    const searchable = JSON.stringify(record).toLowerCase();
+    const matchesSearch = !search.trim() || searchable.includes(search.trim().toLowerCase());
+    const matchesFilter =
+      recordFilter === 'all' ||
+      record.role === recordFilter ||
+      record.orderStatus === recordFilter ||
+      record.subscriptionStatus === recordFilter;
+    return matchesSearch && matchesFilter;
+  });
+  const dashboardPath = role === 'super_admin' ? '/super-admin/dashboard' : '/admin/dashboard';
   return (
     <>
-      <span className="eyebrow">YOUR SPACE</span>
-      <h1>{section.replaceAll('-', ' ')}</h1>
+      <span className="eyebrow">
+        {admin
+          ? role === 'super_admin'
+            ? 'SUPER ADMINISTRATION'
+            : 'ADMINISTRATION'
+          : 'YOUR SPACE'}
+      </span>
+      <h1>
+        {section === 'overview'
+          ? `${role === 'super_admin' ? 'Super Admin' : 'Admin'} dashboard`
+          : section.replaceAll('-', ' ')}
+      </h1>
       {error && <ErrorState message={error} retry={() => setRevision((n) => n + 1)} />}{' '}
       {loading ? (
         <LoadingState />
+      ) : section === 'overview' && overview ? (
+        <>
+          <section className="summary-grid admin-statistics" aria-label="System statistics">
+            {(role === 'super_admin'
+              ? [
+                  ['Total Users', overview.users.length, 'users'],
+                  ['Customers', overview.users.filter((row) => row.role === 'CUSTOMER').length, 'users'],
+                  ['Sellers', overview.sellers.length, 'sellers'],
+                  [
+                    'Admins',
+                    overview.users.filter((row) => row.role === 'ADMIN').length,
+                    'admins',
+                  ],
+                  ['Products', overview.products.length, 'products'],
+                  ['Orders', overview.orders.length, 'orders'],
+                  ['Try-On Sessions', overview.sessions.length, 'try-on-sessions'],
+                ]
+              : [
+                  ['Total Users', overview.users.length, 'users'],
+                  ['Sellers', overview.sellers.length, 'sellers'],
+                  ['Products', overview.products.length, 'products'],
+                  ['Orders', overview.orders.length, 'orders'],
+                  ['Try-On Sessions', overview.sessions.length, 'try-on-sessions'],
+                ]
+            ).map(([label, count, target]) => (
+              <Link className="panel" key={label} to={`${dashboardPath}/${target}`}>
+                <span>{label}</span>
+                <strong>{count}</strong>
+              </Link>
+            ))}
+          </section>
+          {role === 'super_admin' && (
+            <section className="panel super-admin-controls" aria-label="Super Admin controls">
+              <h2>Super Admin-only controls</h2>
+              <p>Manage administrator accounts and system-wide roles.</p>
+              <Link to={`${dashboardPath}/admins`}>Manage Admin accounts</Link>
+            </section>
+          )}
+        </>
       ) : section === 'profile' ? (
         <div className="panel">
           <h2>{user.fullName}</h2>
@@ -129,8 +232,43 @@ export default function Dashboard() {
               </h2>
             </section>
           )}
-          {['products', 'categories', 'sellers'].includes(section) && (
-            <Button onClick={() => setEditing({})}>Create {section.slice(0, -1)}</Button>
+          {admin && (
+            <div className="admin-record-tools">
+              <label>
+                Search records
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search this section"
+                />
+              </label>
+              <label>
+                Filter
+                <select value={recordFilter} onChange={(event) => setRecordFilter(event.target.value)}>
+                  <option value="all">All records</option>
+                  {section === 'users' || section === 'admins'
+                    ? (section === 'admins' ? ['ADMIN'] : ['CUSTOMER', 'SELLER', 'ADMIN', 'SUPER_ADMIN']).map((value) => (
+                        <option key={value}>{value}</option>
+                      ))
+                    : section === 'orders'
+                      ? ['PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED'].map((value) => (
+                          <option key={value}>{value}</option>
+                        ))
+                      : section === 'sellers'
+                        ? ['ACTIVE', 'INACTIVE', 'SUSPENDED'].map((value) => (
+                            <option key={value}>{value}</option>
+                          ))
+                        : null}
+                </select>
+              </label>
+            </div>
+          )}
+          {(['products', 'categories', 'sellers'].includes(section) ||
+            (section === 'admins' && role === 'super_admin')) && (
+            <Button onClick={() => setEditing({})}>
+              Create {section === 'admins' ? 'Admin account' : section.slice(0, -1)}
+            </Button>
           )}
           {editing && (
             <ManagementForm
@@ -144,22 +282,27 @@ export default function Dashboard() {
               busy={busy}
               cancel={() => setEditing(null)}
               submit={(payload) =>
-                action(() =>
-                  editing.id
+                action(() => {
+                  if (section === 'admins') {
+                    return services.users.create(payload).then(({ data }) =>
+                      api.put(`/api/users/${data.id}/role`, { role: 'ADMIN' }),
+                    );
+                  }
+                  return editing.id
                     ? services[section].update(editing.id, payload)
-                    : services[section].create(payload),
-                )
+                    : services[section].create(payload);
+                })
               }
             />
           )}
-          {!list.length ? (
+          {!visibleRecords.length ? (
             <EmptyState
-              title={`No ${section.replaceAll('-', ' ')} yet`}
-              text="Records will appear here when they are available."
+              title={search || recordFilter !== 'all' ? 'No matching records' : `No ${section.replaceAll('-', ' ')} yet`}
+              text={search || recordFilter !== 'all' ? 'Try a different search or filter.' : 'Records will appear here when they are available.'}
             />
           ) : (
             <div className="record-list">
-              {list.map((record) => (
+              {visibleRecords.map((record) => (
                 <article className="panel" key={record.id}>
                   {section === 'products' ? (
                     <>
@@ -178,7 +321,7 @@ export default function Dashboard() {
                       <h3>{record.categoryName}</h3>
                       <p>{record.description}</p>
                     </>
-                  ) : section === 'users' ? (
+                  ) : section === 'users' || section === 'admins' ? (
                     <>
                       <h3>{record.fullName}</h3>
                       <p>
@@ -190,6 +333,7 @@ export default function Dashboard() {
                       <h3>{record.businessName}</h3>
                       <p>{record.contactEmail}</p>
                       <p>User #{record.userId}</p>
+                      <p>Status: {record.subscriptionStatus}</p>
                     </>
                   ) : section === 'orders' ? (
                     <>
@@ -231,15 +375,45 @@ export default function Dashboard() {
                         )}
                       </>
                     )}
-                    {section === 'users' && role === 'super_admin' && record.id !== user.id && (
+                    {section === 'sellers' && admin && (
+                      <select
+                        aria-label={`Subscription status for ${record.businessName}`}
+                        value={record.subscriptionStatus}
+                        disabled={busy}
+                        onChange={(e) =>
+                          action(() =>
+                            services.sellers.update(record.id, {
+                              businessName: record.businessName,
+                              contactEmail: record.contactEmail,
+                              phone: record.phone,
+                              subscriptionStatus: e.target.value,
+                            }),
+                          )
+                        }
+                      >
+                        {['ACTIVE', 'INACTIVE', 'SUSPENDED'].map((value) => (
+                          <option key={value}>{value}</option>
+                        ))}
+                      </select>
+                    )}
+                    {['users', 'admins'].includes(section) &&
+                    role === 'super_admin' &&
+                    record.id !== user.id && (
                       <select
                         aria-label={`Role for ${record.email}`}
                         value={record.role}
                         disabled={busy}
                         onChange={(e) =>
-                          action(() =>
-                            api.put(`/api/users/${record.id}/role`, { role: e.target.value }),
-                          )
+                          action(async () => {
+                            await api.put(`/api/users/${record.id}/role`, { role: e.target.value });
+                            setRecords((old) =>
+                              old.filter(
+                                (item) =>
+                                  item.id !== record.id ||
+                                  e.target.value === 'ADMIN',
+                              ),
+                            );
+                          })
                         }
                       >
                         {['CUSTOMER', 'SELLER', 'ADMIN', 'SUPER_ADMIN'].map((value) => (
@@ -263,6 +437,7 @@ export default function Dashboard() {
                         ))}
                       </select>
                     )}
+                    {section === 'try-on-sessions' && <p>Customer #{record.userId}</p>}
                   </div>
                 </article>
               ))}
@@ -308,7 +483,25 @@ function ManagementForm({ section, record, categories, sellers, seller, busy, ca
         description: form.description || '',
         parentCategoryId: null,
       };
-    else
+    else if (section === 'admins') {
+      if (
+        !form.fullName?.trim() ||
+        !form.email?.trim() ||
+        !form.password ||
+        !form.phone?.trim() ||
+        !form.address?.trim()
+      ) {
+        setValidation('All administrator account fields are required.');
+        return;
+      }
+      payload = {
+        fullName: form.fullName.trim(),
+        email: form.email.trim(),
+        password: form.password,
+        phone: form.phone.trim(),
+        address: form.address.trim(),
+      };
+    } else
       payload = {
         userId: Number(form.userId),
         businessName: form.businessName?.trim(),
@@ -377,6 +570,14 @@ function ManagementForm({ section, record, categories, sellers, seller, busy, ca
         <>
           {input('categoryName', 'Category name', { required: true })}
           {input('description', 'Description', { required: true })}
+        </>
+      ) : section === 'admins' ? (
+        <>
+          {input('fullName', 'Full name', { required: true })}
+          {input('email', 'Email', { type: 'email', required: true })}
+          {input('password', 'Temporary password', { type: 'password', minLength: 6, required: true })}
+          {input('phone', 'Phone', { required: true })}
+          {input('address', 'Address', { required: true })}
         </>
       ) : (
         <>

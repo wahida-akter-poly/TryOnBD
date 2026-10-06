@@ -28,16 +28,15 @@ export default function Auth() {
       const { data } = await services.auth[register ? 'register' : 'login'](
         register ? form : { email: form.email, password: form.password },
       );
-      const roleMatches =
-        selectedRole === 'ADMIN'
-          ? ['ADMIN', 'SUPER_ADMIN'].includes(data.user.role)
-          : data.user.role === selectedRole;
+      const roleMatches = data.user.role === selectedRole;
       if (!register && !roleMatches) {
         const label =
           selectedRole === 'SELLER'
             ? 'a Seller'
             : selectedRole === 'ADMIN'
               ? 'an Admin'
+              : selectedRole === 'SUPER_ADMIN'
+                ? 'a Super Admin'
               : 'a Customer';
         setError(`This account is not registered as ${label}.`);
         return;
@@ -48,7 +47,9 @@ export default function Auth() {
           ? '/seller/dashboard'
           : data.user.role === 'CUSTOMER'
             ? '/'
-            : `/dashboard/${data.user.role.toLowerCase()}`,
+            : data.user.role === 'ADMIN'
+              ? '/admin/dashboard'
+              : '/super-admin/dashboard',
       );
     } catch (e) {
       setError(errorMessage(e));
@@ -80,6 +81,7 @@ export default function Auth() {
                 <option value="CUSTOMER">CUSTOMER</option>
                 <option value="SELLER">SELLER</option>
                 <option value="ADMIN">ADMIN</option>
+                <option value="SUPER_ADMIN">SUPER ADMIN</option>
               </select>
             </label>
           )}

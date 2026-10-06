@@ -19,6 +19,10 @@ public class DemoAccountSeeder implements ApplicationRunner {
     private static final String CUSTOMER_PASSWORD = "Customer@123";
     private static final String SELLER_EMAIL = "anzara@tryonbd.demo";
     private static final String SELLER_PASSWORD = "Anzara@123";
+    private static final String ADMIN_EMAIL = "admin@tryonbd.demo";
+    private static final String ADMIN_PASSWORD = "Admin@123";
+    private static final String SUPER_ADMIN_EMAIL = "superadmin@tryonbd.demo";
+    private static final String SUPER_ADMIN_PASSWORD = "SuperAdmin@123";
     private static final long ANZARA_SELLER_ID = 2L;
 
     private final UserRepository users;
@@ -58,11 +62,19 @@ public class DemoAccountSeeder implements ApplicationRunner {
 
         anzara.setUser(sellerUser);
         sellers.save(anzara);
+
+        User admin = upsert(ADMIN_EMAIL, ADMIN_PASSWORD, "TryOnBD Admin", "ADMIN");
+        User superAdmin = upsert(SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD, "TryOnBD Super Admin", "SUPER_ADMIN");
+        if (sellers.existsByUserId(admin.getId()) || sellers.existsByUserId(superAdmin.getId())) {
+            throw new IllegalStateException("Demo administrator accounts cannot be linked to seller profiles");
+        }
         System.out.printf(
-            "Demo accounts ready: customer user %d; seller user %d linked to existing seller %d%n",
+            "Demo accounts ready: customer user %d; seller user %d linked to existing seller %d; admin user %d; super admin user %d%n",
             customer.getId(),
             sellerUser.getId(),
-            anzara.getId()
+            anzara.getId(),
+            admin.getId(),
+            superAdmin.getId()
         );
     }
 

@@ -23,7 +23,17 @@ export default function Navbar() {
           )}
           {identity ? (
             <>
-              <Link to={role === 'seller' ? '/seller/dashboard' : `/dashboard/${role}`}>
+              <Link
+                to={
+                  role === 'seller'
+                    ? '/seller/dashboard'
+                    : role === 'admin'
+                      ? '/admin/dashboard'
+                      : role === 'super_admin'
+                        ? '/super-admin/dashboard'
+                        : `/dashboard/${role}`
+                }
+              >
                 Account
               </Link>
               <button className="btn btn-ghost" onClick={logout}>

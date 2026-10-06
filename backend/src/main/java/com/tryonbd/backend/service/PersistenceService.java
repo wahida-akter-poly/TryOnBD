@@ -248,7 +248,10 @@ public class PersistenceService {
     @Transactional(readOnly = true)
     public List<TryOnSessionResponse> listTryOnSession() {
         User user = currentUser();
-        return tryOnSessionRepository.findByUserId(user.getId()).stream().map(TryOnSessionResponse::from).toList();
+        var sessions = admin()
+            ? tryOnSessionRepository.findAll()
+            : tryOnSessionRepository.findByUserId(user.getId());
+        return sessions.stream().map(TryOnSessionResponse::from).toList();
     }
     @Transactional(readOnly = true)
     public TryOnSessionResponse getTryOnSession(Long id) { var v = require(tryOnSessionRepository, id); owned(v.getUser()); return TryOnSessionResponse.from(v); }
