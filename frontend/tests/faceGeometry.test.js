@@ -630,3 +630,57 @@ test('real normalized temple and front product PNGs retain their original pixels
     );
   }
 });
+
+test('source anchors support vertical and reversed temple photographs without zero width', async () => {
+  const { templeSourceBasis } = await import('../src/components/tryon/templeAssetGeometry.js');
+  const width = 40,
+    height = 120,
+    pixels = new Uint8ClampedArray(width * height * 4);
+  for (let y = 10; y < 110; y++)
+    for (let x = 18; x < 22; x++) pixels[(y * width + x) * 4 + 3] = 255;
+  for (const left of [true, false]) {
+    const basis = templeSourceBasis(pixels, width, height, left, {
+      hinge: { x: 0.5, y: 10 / 120 },
+      tip: { x: 0.5, y: 110 / 120 },
+    });
+    assert.equal(basis.ax, 0);
+    assert.equal(basis.ay, 1);
+    assert.equal(basis.length, 100);
+  }
+  assert.throws(() =>
+    templeSourceBasis(pixels, width, height, true, {
+      hinge: { x: 0.5, y: 0.5 },
+      tip: { x: 0.5, y: 0.5 },
+    }),
+  );
+  assert.throws(() =>
+    templeSourceBasis(pixels, width, height, true, {
+      hinge: { x: -1, y: 0.5 },
+      tip: { x: 0.5, y: 0.9 },
+    }),
+  );
+});
+
+test('straight shaft reference excludes the ear hook from photographic orientation', async () => {
+  const { templeSourceBasis } = await import('../src/components/tryon/templeAssetGeometry.js');
+  const width = 100,
+    height = 80,
+    pixels = new Uint8ClampedArray(width * height * 4);
+  for (let x = 10; x < 95; x++) for (let y = 18; y < 22; y++) pixels[(y * width + x) * 4 + 3] = 255;
+  for (let y = 20; y < 70; y++) for (let x = 90; x < 94; x++) pixels[(y * width + x) * 4 + 3] = 255;
+  const basis = templeSourceBasis(pixels, width, height, false, {
+    hinge: { x: 0.1, y: 0.25 },
+    shaft: { x: 0.7, y: 0.25 },
+    tip: { x: 0.92, y: 0.85 },
+  });
+  assert.equal(basis.ay, 0);
+  assert.equal(basis.ax, 1);
+  assert.equal(basis.length, 82);
+  assert.throws(() =>
+    templeSourceBasis(pixels, width, height, false, {
+      hinge: { x: 0.1, y: 0.25 },
+      shaft: { x: 0.1, y: 0.25 },
+      tip: { x: 0.92, y: 0.85 },
+    }),
+  );
+});

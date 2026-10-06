@@ -275,8 +275,8 @@ export function drawTempleQuad(ctx, part, quad) {
   const count = quad.strips?.length ?? 8;
   // Eight strips / sixteen triangles preserve texture along the subtle curve.
   for (let i = 0; i < count; i++) {
-    const u = i / count,
-      v = (i + 1) / count,
+    const u = quad.columns?.[i] ?? i / count,
+      v = quad.columns?.[i + 1] ?? (i + 1) / count,
       w = part.bounds.width,
       h = part.bounds.height;
     const [a, b, c, d] = quad.strips?.[i] ?? [

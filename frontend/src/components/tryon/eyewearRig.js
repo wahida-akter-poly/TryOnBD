@@ -84,11 +84,11 @@ export function createEyewearRig(anchor, transform, fit = {}) {
   // Length and curvature live in HEAD coordinates and never change with yaw.
   const paths = localHinges.map((h, i) => {
     const side = i ? 1 : -1,
-      rootX = Math.abs(h.x) + curve * 0.45;
+      rootX = Math.abs(h.x) + curve * 0.7;
     return [
       h,
       { x: side * rootX, y: h.y, z: depth * rootLength },
-      { x: side * (radius + splay), y: h.y + drop * 0.45, z: depth * sideProgress },
+      { x: side * Math.max(rootX, radius + splay), y: h.y + drop * 0.45, z: depth * sideProgress },
       { x: side * (radius - curve * 1.4), y: h.y + drop, z: depth },
     ];
   });
@@ -198,14 +198,21 @@ export function createEyewearRig(anchor, transform, fit = {}) {
   };
 }
 
-export function textureMesh(point, count = eyewearRigConfig.textureStrips) {
-  const strips = Array.from({ length: count }, (_, i) => [
-    point(i / count, 0),
-    point((i + 1) / count, 0),
-    point((i + 1) / count, 1),
-    point(i / count, 1),
-  ]);
-  return { corners: [strips[0][0], strips.at(-1)[1], strips.at(-1)[2], strips[0][3]], strips };
+export function textureMesh(point, count = eyewearRigConfig.textureStrips, seams = []) {
+  const columns = [
+    ...new Set([
+      ...Array.from({ length: count + 1 }, (_, i) => i / count),
+      ...seams.filter((u) => u > 0 && u < 1),
+    ]),
+  ].sort((a, b) => a - b);
+  const strips = columns
+    .slice(0, -1)
+    .map((u, i) => [point(u, 0), point(columns[i + 1], 0), point(columns[i + 1], 1), point(u, 1)]);
+  return {
+    columns,
+    corners: [strips[0][0], strips.at(-1)[1], strips.at(-1)[2], strips[0][3]],
+    strips,
+  };
 }
 
 export function rigidTempleMesh(rig, temple, part) {
@@ -216,14 +223,28 @@ export function rigidTempleMesh(rig, temple, part) {
     };
   const tip = part.visibleTip ?? { x: b.x + (temple.side < 0 ? 0 : b.width), y: hinge.y };
   const dx = tip.x - hinge.x;
-  const mesh = textureMesh((u, v) =>
-    rig.project(
-      rig.templePoint(
-        temple.side,
-        (b.x + u * b.width - hinge.x) / dx,
-        (b.y + v * b.height - hinge.y) / Math.abs(dx),
+  if (!Number.isFinite(dx) || Math.abs(dx) < 1e-6)
+    throw new Error('Temple shaft must have distinct hinge and rear anchors.');
+  // Place a mesh column EXACTLY through the photographed hinge. Without this
+  // seam the first texture triangle interpolates across the curved/clamped root,
+  // separating visible hinge pixels from the mathematical hinge at head turns.
+  const seams = [
+    0,
+    rig.headFit.rootLength,
+    Math.min(0.75, Math.max(0.4, rig.headFit.sideDepth / rig.depth)),
+    1,
+  ].map((t) => (hinge.x + t * dx - b.x) / b.width);
+  const mesh = textureMesh(
+    (u, v) =>
+      rig.project(
+        rig.templePoint(
+          temple.side,
+          (b.x + u * b.width - hinge.x) / dx,
+          (b.y + v * b.height - hinge.y) / Math.abs(dx),
+        ),
       ),
-    ),
+    eyewearRigConfig.textureStrips,
+    seams,
   );
   return {
     ...mesh,

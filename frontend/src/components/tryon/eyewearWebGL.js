@@ -143,10 +143,13 @@ function planeVertices(mesh, part, rig, transform, width, height) {
   for (let i = 0; i < n; i++) {
     const quad = mesh.strips[i];
     const uv = [
-      { x: (b.x + (i / n) * b.width) / iw, y: b.y / ih },
-      { x: (b.x + ((i + 1) / n) * b.width) / iw, y: b.y / ih },
-      { x: (b.x + ((i + 1) / n) * b.width) / iw, y: (b.y + b.height) / ih },
-      { x: (b.x + (i / n) * b.width) / iw, y: (b.y + b.height) / ih },
+      { x: (b.x + (mesh.columns?.[i] ?? i / n) * b.width) / iw, y: b.y / ih },
+      { x: (b.x + (mesh.columns?.[i + 1] ?? (i + 1) / n) * b.width) / iw, y: b.y / ih },
+      {
+        x: (b.x + (mesh.columns?.[i + 1] ?? (i + 1) / n) * b.width) / iw,
+        y: (b.y + b.height) / ih,
+      },
+      { x: (b.x + (mesh.columns?.[i] ?? i / n) * b.width) / iw, y: (b.y + b.height) / ih },
     ];
     for (const j of [0, 1, 2, 0, 2, 3])
       values.push(...vertex(quad[j], uv[j], rig, transform, width, height));

@@ -27,6 +27,34 @@ class ControllerRequestTests {
  Seller seller(User u){Seller s=new Seller();s.setUser(u);s.setBusinessName("Test Store");s.setContactEmail(u.getEmail());s.setPhone("01700000000");s.setSubscriptionStatus("ACTIVE");return sellers.save(s);}
  String token(User u){return "Bearer "+jwt.generateToken(u.getId(),u.getEmail(),u.getRole());}
  @BeforeEach void setup(){mvc=MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();customer=user("CUSTOMER","customer@test.example");other=user("CUSTOMER","other@test.example");sellerUser=user("SELLER","seller@test.example");admin=user("ADMIN","admin@test.example");superAdmin=user("SUPER_ADMIN","super@test.example");seller=seller(sellerUser);otherSeller=seller(other);category=new Category();category.setCategoryName("Clothing");category.setDescription("Test category");categories.save(category);product=new Product();product.setName("Test Shirt");product.setArType("SHIRT");product.setPrice(new BigDecimal("12.50"));product.setStockQuantity(5);product.setCategory(category);product.setSeller(seller);products.save(product);}
+ @Autowired com.tryonbd.backend.service.ProductAssetSyncService productSync;
+ @Test void genuineGoldenManifestUsesGenericCommerceAndManagementWithoutLosingFitMetadata() throws Exception {
+   var source=com.tryonbd.backend.service.ProductAssetPackage.discover(java.nio.file.Path.of("../frontend/public/assets/products"))
+     .stream().filter(p->p.key().equals("eyewear/golden-frame")).findFirst().orElseThrow();
+   // Legitimate seller principal in the isolated H2 database; production ownership is untouched.
+   var pkg=new com.tryonbd.backend.service.ProductAssetPackage(source.key(),false,seller.getId(),null,
+     source.name(),source.description(),source.price(),source.stockQuantity(),source.category(),source.arType(),source.imageUrl(),source.arMetadata());
+   var id=productSync.sync(java.util.List.of(pkg),null,false).getFirst().productId();
+   var golden=products.findById(id).orElseThrow();
+   mvc.perform(get("/api/products/"+id)).andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Golden Frame"))
+     .andExpect(jsonPath("$.arMetadata.leftTempleAsset").value(source.arMetadata().get("leftTempleAsset")));
+   mvc.perform(get("/api/account/products").header("Authorization",token(sellerUser))).andExpect(status().isOk())
+     .andExpect(content().string(org.hamcrest.Matchers.containsString("Golden Frame")));
+   String body="{\"name\":\"Golden Frame\",\"description\":\""+source.description()+"\",\"price\":2199,\"stockQuantity\":15,\"arType\":\"EYEWEAR\",\"imageUrl\":\""+source.imageUrl()+"\",\"categoryId\":"+golden.getCategory().getId()+",\"sellerId\":"+seller.getId()+"}";
+   for(var role:java.util.List.of(sellerUser,admin,superAdmin)) {
+     mvc.perform(put("/api/products/"+id).header("Authorization",token(role)).contentType("application/json").content(body))
+       .andExpect(status().isOk()).andExpect(jsonPath("$.arMetadata.fitProfile.templeDepth").value(.62));
+     assertEquals(source.arMetadata(),products.findById(id).orElseThrow().getArMetadata());
+   }
+   mvc.perform(post("/api/account/cart/"+id).header("Authorization",token(customer)).contentType("application/json").content("{\"quantity\":2}"))
+     .andExpect(status().isOk()).andExpect(jsonPath("$."+id).value(2));
+   mvc.perform(put("/api/account/cart/"+id).header("Authorization",token(customer)).contentType("application/json").content("{\"quantity\":16}"))
+     .andExpect(status().isConflict());
+   mvc.perform(post("/api/account/checkout").header("Authorization",token(customer))).andExpect(status().isOk())
+     .andExpect(jsonPath("$.totalAmount").value(4398)).andExpect(jsonPath("$.items[0].productId").value(id));
+   assertEquals(13,products.findById(id).orElseThrow().getStockQuantity());
+   assertEquals(new BigDecimal("12.50"),products.findById(product.getId()).orElseThrow().getPrice());
+ }
  @Test void catalogIsPublicAndMissingProductIs404() throws Exception {mvc.perform(get("/api/products")).andExpect(status().isOk()).andExpect(jsonPath("$[0].name").value("Test Shirt"));mvc.perform(get("/api/categories")).andExpect(status().isOk());mvc.perform(get("/api/products/999999")).andExpect(status().isNotFound());}
  @Test void protectedEndpointsRequireJwtAndCustomerCannotManage() throws Exception {mvc.perform(get("/api/account/cart")).andExpect(status().isUnauthorized());mvc.perform(get("/api/account/me").header("Authorization","Bearer invalid")).andExpect(status().isUnauthorized());mvc.perform(get("/api/users").header("Authorization",token(customer))).andExpect(status().isForbidden());mvc.perform(delete("/api/products/"+product.getId()).header("Authorization",token(customer))).andExpect(status().isForbidden());mvc.perform(get("/api/users").header("Authorization",token(admin))).andExpect(status().isOk());}
  @Test void cartAndCheckoutUsePrincipalAndServerPrices() throws Exception {mvc.perform(put("/api/account/cart/"+product.getId()).header("Authorization",token(customer)).contentType("application/json").content("{\"quantity\":2}")).andExpect(status().isOk());mvc.perform(get("/api/account/cart").header("Authorization",token(other))).andExpect(content().json("{}"));mvc.perform(post("/api/account/checkout").header("Authorization",token(customer))).andExpect(status().isOk()).andExpect(jsonPath("$.totalAmount").value(25)).andExpect(jsonPath("$.userId").value(customer.getId())).andExpect(jsonPath("$.items[0].quantity").value(2));assertEquals(3,products.findById(product.getId()).orElseThrow().getStockQuantity());mvc.perform(get("/api/account/cart").header("Authorization",token(customer))).andExpect(content().json("{}"));mvc.perform(get("/api/orders").header("Authorization",token(other))).andExpect(content().json("[]"));mvc.perform(post("/api/account/checkout").header("Authorization",token(customer))).andExpect(status().isBadRequest());}

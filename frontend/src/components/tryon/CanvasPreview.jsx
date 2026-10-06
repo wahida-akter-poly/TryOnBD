@@ -91,7 +91,7 @@ const CanvasPreview = forwardRef(function CanvasPreview(
     asset.current = null;
     report.current({ assetReady: false, assetError: '', assetNotice: '' });
     (leftTempleSrc && rightTempleSrc
-      ? loadGlassesAssembly(overlay, leftTempleSrc, rightTempleSrc)
+      ? loadGlassesAssembly(overlay, leftTempleSrc, rightTempleSrc, fit)
       : loadAccessoryAsset(overlay, null, kind === 'sunglasses')
     )
       .then((loaded) => {
@@ -118,7 +118,15 @@ const CanvasPreview = forwardRef(function CanvasPreview(
     return () => {
       current = false;
     };
-  }, [overlay, leftTempleSrc, rightTempleSrc, kind, retry, fit?.lensSurface]);
+  }, [
+    overlay,
+    leftTempleSrc,
+    rightTempleSrc,
+    kind,
+    retry,
+    fit?.lensSurface,
+    fit?.templeSourceAnchors,
+  ]);
   useEffect(() => {
     frozen.current = null;
     wasAuto.current = true;

@@ -437,7 +437,7 @@ test('three separately calibrated backend eyewear packages share one engine and 
     close(rig.headFit.curve, curve);
     for (const temple of rig.temples) {
       const mesh = rigidTempleMesh(rig, temple, part(temple.side < 0 ? 'left' : 'right'));
-      assert.equal(mesh.strips.length, 16);
+      assert.ok(mesh.strips.length >= 16 && mesh.strips.length <= 20);
       close(mesh.hinge.x, temple.hingeX);
       close(mesh.hinge.y, temple.hingeY);
     }
@@ -459,4 +459,76 @@ test('posterior head shell is finite and behind the bridge in frontal pose, and 
   assert.ok(mesh.strips[0][0].depth > mesh.strips.at(-1)[1].depth);
   const right = rigidTempleMesh(rig, rig.temples[1], part('right'));
   assert.ok(right.strips[0][0].depth < right.strips.at(-1)[1].depth);
+});
+
+// Test texture interpolation, not the diagnostic mesh.hinge property.
+test('photographic hinge has an exact texture seam under every rigid pose', () => {
+  for (const yaw of [0, -15, 15, -30, 30])
+    for (const pitch of [-10, 0, 10]) {
+      const rig = createEyewearRig(
+        { ...anchor, rawYawDegrees: yaw, pitchDegrees: pitch },
+        transform,
+        fit,
+      );
+      for (const temple of rig.temples) {
+        const asset = part(temple.side < 0 ? 'left' : 'right');
+        const mesh = rigidTempleMesh(rig, temple, asset);
+        const u = (asset.visibleHinge.x - asset.bounds.x) / asset.bounds.width;
+        const index = mesh.columns.findIndex((c) => Math.abs(c - u) < 1e-12);
+        assert.ok(index >= 0);
+        const edge =
+          index < mesh.strips.length
+            ? [mesh.strips[index][0], mesh.strips[index][3]]
+            : [mesh.strips.at(-1)[1], mesh.strips.at(-1)[2]];
+        const v = (asset.visibleHinge.y - asset.bounds.y) / asset.bounds.height;
+        const h = temple.side < 0 ? rig.front.leftHinge : rig.front.rightHinge;
+        const w0 = 1 / edge[0].perspective,
+          w1 = 1 / edge[1].perspective,
+          w = w0 * (1 - v) + w1 * v;
+        for (const k of ['x', 'y'])
+          close((edge[0][k] * w0 * (1 - v) + edge[1][k] * w1 * v) / w, h[k]);
+        close(edge[0].depth + v * (edge[1].depth - edge[0].depth), h.depth);
+      }
+    }
+});
+
+test('live face depth and eyewear root share filtered yaw/pitch through reversals', () => {
+  const local = Array.from({ length: 468 }, (_, i) => ({
+    x: ((i % 13) - 6) / 14,
+    y: ((i % 7) - 3) / 8,
+    z: 0.1 + (i % 5) / 30,
+  }));
+  const measured = (yaw, pitch) => {
+    const y = (yaw * Math.PI) / 180,
+      t = (pitch * Math.PI) / 180,
+      c = Math.cos(y);
+    return {
+      ...anchor,
+      rawYawDegrees: yaw,
+      pitchDegrees: pitch,
+      faceSurface: local.map((p) => {
+        const py = Math.cos(t) * p.y - Math.sin(t) * p.z,
+          pz = Math.sin(t) * p.y + Math.cos(t) * p.z;
+        return {
+          x: (Math.cos(y) * p.x - Math.sin(y) * pz) / c,
+          y: py / c,
+          z: (Math.sin(y) * p.x + Math.cos(y) * pz) / c,
+        };
+      }),
+    };
+  };
+  let filtered = smoothAnchors(null, [measured(0, 0)], 16);
+  for (const [yaw, pitch] of [
+    [30, 10],
+    [-30, -10],
+    [15, 5],
+    [0, 0],
+  ]) {
+    filtered = smoothAnchors(filtered, [measured(yaw, pitch)], 16);
+    const actual = filtered[0],
+      expected = measured(actual.rawYawDegrees, actual.pitchDegrees);
+    assert.ok(Math.abs(actual.rawYawDegrees - yaw) > 1);
+    for (let i = 0; i < 468; i++)
+      for (const k of ['x', 'y', 'z']) close(actual.faceSurface[i][k], expected.faceSurface[i][k]);
+  }
 });

@@ -129,3 +129,35 @@ npm run dev
 ```
 
 This change is isolated to eyewear geometry/rendering/debugging/tests/docs and the required eyewear fit-metadata validator. Product business data, incoming images, Shirt/Necklace engines, authentication, cart/orders and management implementation remain untouched.
+
+## Final shared temple fix (Golden Frame and Modern Clear)
+
+The final renderer keeps the matrix-driven rigid root, WebGL face/skull depth prepass, premultiplied alpha, 0.01 alpha discard and tracking-loss policy. Temple opacity stays 1. No model was trained or fine-tuned.
+
+The previous source mapping divided by horizontal hinge-to-tip distance. Vertical/rotated photographs could collapse or skew, and the hook could bias the shaft orientation. Source pixels now normalize once on load into their measured shaft basis. There is no filename-based Modern Clear calibration lookup. Optional `fitProfile.templeSourceAnchors` specifies each part's `hinge`, `tip` and optional `shaft` reference in full-PNG normalized coordinates. `shaft` is a point on the straight proximal shaft, not the curved ear hook. It defines orientation while `tip` still defines full longitudinal length. Left and right are loaded separately from their actual product paths.
+
+The mesh includes explicit columns at the photographed hinge and path knots, in addition to its 16 regular subdivisions (at most 20 strips). Both WebGL UVs and Canvas source triangles use those same columns. The hinge seam remains exact under perspective, yaw, pitch and roll. A small curved root wrap travels backward in depth; the side section cannot fold inward before clearing that wrap. Both sides share the root and its filtered head dimensions.
+
+Live tracking previously spread the new raw camera-space face mesh onto a smoothed eyewear root. On head turns that mask could overtake the hinges. The face surface is now unrotated into head-local coordinates, its residual shape filters at 80 ms, and it is rotated into the same filtered root orientation. Face contour and depth therefore move with the assembly. Root orientation, scale, bridge smoothing and loss hold/fade remain as before. Physical head/face depth and measured lens apertures determine visibility, rather than independent temple yaw fades.
+
+Opaque tinted front photographs can provide `fitProfile.lensSurface`: full image `width`/`height`, two `apertures` with source-pixel `outline` and `samples`, optional `hardware` polygons and material `opacity` (0.1?1). The existing lens material sampler takes colour from the genuine image and removes baked rear-arm reflections in AR; a matching aperture depth mask prevents projected arms appearing within lenses. Original catalog pixels and nose-pad hardware remain preserved. This changes lens material alpha, never temple opacity.
+
+Golden Frame uses the same engine. Its complete approved metadata is in [product.json](frontend/public/assets/products/eyewear/golden-frame/product.json). Physical fit: width 0.98, bridge (0.5, 0.3), hinges (0.028, 0.333)/(0.970, 0.333), depth 0.62, splay 0.025, curve 0.055, root fraction 0.20, drop 0.016, temple opacity 100%. The straight-shaft source references correct the angled source photographs. Modern Clear's product row and manifest remain unchanged.
+
+Golden's transparent front/left/right PNGs are deterministic cutouts from the user-approved `front_1.png`, `angle_1.png` and `side_1.png`, with no generated artwork. The left visible shaft comes from the angled photograph; the right comes from the side photograph. The left is horizontally aligned into the renderer's left-side convention. Parts hidden in the photographs were not reconstructed. `source-masks.json` records the polygons and alignment. Reproduce from production root with:
+
+```powershell
+node frontend/scripts/prepare-eyewear-cutouts.mjs frontend/public/assets/products/eyewear/golden-frame/source-masks.json
+```
+
+Original SHA-256 values:
+
+- front_1.png: `0a4b4b5eabbbedce5a2c51239f865b2a9e8bb4ed48ba6e49cfdf869216d23318`
+- angle_1.png: `4a1ddc65cb462cacb882fb41104799f61b9c302210fd098a1a2b58cae8f057dc`
+- side_1.png: `bdb01618e8fad1855bb2acf5f697e1ce45b0847de5e367142715dfbe564475d6`
+
+Golden Frame imported through `npm run sync:products` as ID 6, seller 2/Anzara, category 2/Eyewear, price 2199, stock 15. Repeated sync keeps ID 6. API snapshots confirm products 1?5 unchanged. All three cutouts pass the existing transparent/visible PNG validation. User-requested Classic Aviator source deletions remain untouched; tests requiring its missing package/image still fail and are reported separately.
+
+Verification adds actual photographic-pixel pose fixtures for both complete products, texture-seam attachment tests, 36 moving-pose/rotated-source pixel checks, source-axis validation, sync idempotency, live backend catalog/details/try-on flows, isolated commerce and role-management UI tests, and backend transactional commerce/management tests using Golden's real manifest. Live catalog tests do not create orders or change real stock. Generated captures are ignored under `frontend/artifacts/`.
+
+Physical webcam realism is still awaiting manual review. Open `/try-on?productId=6` and `/try-on?productId=2` with Camera. Test frontal, slow left/right turns, 15 and 20?30 degree yaw, left/right roll, slight upward/downward pitch, closer/farther movement, and quick left-centre-right reversals. Check that both small roots stay joined, the near arm follows the head, the far arm partially occludes and neither crosses a lens. Also briefly leave/re-enter view and compare a saved capture. Ear positions and hair are estimated rather than measured; photographic strips cannot recover a manufacturer's full solid geometry.

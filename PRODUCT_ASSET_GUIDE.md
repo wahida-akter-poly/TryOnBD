@@ -205,3 +205,20 @@ Modern Clear's package persists the complete measured `fitProfile` and both genu
 Place incomplete original photographs under `frontend/public/assets/incoming-products/<family>/<slug>/` while awaiting business metadata and transparent PNG cutouts. This staging area is outside strict sync discovery. Never place an invalid or missing manifest inside `assets/products/`: the entire sync deliberately fails before catalog writes. Golden Frame's original WebP photos are preserved in this staging area without generating artwork or invented business values.
 
 An empty `imageUrl` displays "No product image uploaded". An invalid URL or failed asset request displays "Product image could not load". Asset acceptance tests require HTTP 200, PNG content/signature and nonzero decoded image dimensions, so Vite's HTML route fallback cannot masquerade as a working product image.
+
+### Optional eyewear source and tinted-lens calibration
+
+Every complete eyewear package uses the same renderer. PNGs can retain transparent padding and a rotated shaft. For a reversed or unusually curved source, add `fitProfile.templeSourceAnchors` with `left` and `right`, each containing normalized full-image `hinge` and `tip` points. An optional `shaft` point on the straight proximal segment separates its orientation from the ear hook:
+
+```json
+{
+  "templeSourceAnchors": {
+    "left": {"hinge": {"x": 0.98, "y": 0.40}, "tip": {"x": 0.04, "y": 0.90}, "shaft": {"x": 0.60, "y": 0.40}},
+    "right": {"hinge": {"x": 0.02, "y": 0.40}, "tip": {"x": 0.96, "y": 0.90}, "shaft": {"x": 0.40, "y": 0.40}}
+  }
+}
+```
+
+These are illustrative coordinates only; measure the actual product's pixels. `tip` must remain behind `hinge` along the shaft axis. Shape, scale, bridge and frame hinges use the existing fit fields.
+
+Tinted photographic fronts with baked rear-arm reflections can optionally supply `fitProfile.lensSurface`. It specifies full-image pixel dimensions, two apertures with pixel-coordinate `outline` polygons and clean-colour `samples`, optional nose-pad `hardware` polygons, and material opacity 0.1?1. The renderer samples the genuine lens colour once and protects the same aperture with depth. Temple opacity is unaffected. See the approved [Golden Frame manifest](frontend/public/assets/products/eyewear/golden-frame/product.json) for a complete measured example. No product ID or special React component is needed. Keep importer validation strict; renaming an opaque whole-product photo as a temple does not make it an AR part.

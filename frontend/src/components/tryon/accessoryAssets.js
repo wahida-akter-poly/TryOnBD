@@ -1,5 +1,4 @@
-import { measureTempleAlpha } from './templeAssetGeometry.js';
-import { modernClearTempleCalibration } from '../../data/modernClearTempleCalibration.js';
+import { templeSourceBasis } from './templeAssetGeometry.js';
 
 export function loadImage(url) {
   return new Promise((resolve, reject) => {
@@ -65,60 +64,85 @@ export async function loadAccessoryAsset(src, fallbackSrc, crop = false) {
 // Atomic load: a missing product part is an error, never a partial/fake substitute.
 // The hinge is at the right edge of the mirrored left arm, and the left edge
 // of the right arm. Measure its opaque centre instead of assuming image centre.
-function inspectTemple(part, left) {
+export function inspectTemple(part, left, anchors) {
+  const source = part.image;
+  const width = source.naturalWidth || source.width,
+    height = source.naturalHeight || source.height;
+  const scan = document.createElement('canvas');
+  scan.width = width;
+  scan.height = height;
+  const context = scan.getContext('2d', { willReadFrequently: true });
+  context.drawImage(source, 0, 0);
+  const pixels = context.getImageData(0, 0, width, height).data;
+  const basis = templeSourceBasis(pixels, width, height, left, anchors);
+  // Normalize the real photograph ONCE on load. Left keeps its hinge on the
+  // right, right on the left. Border transparency prevents CLAMP_TO_EDGE ghosts.
+  const sign = left ? -1 : 1;
+  const map = (p) => ({
+    x: sign * ((p.x - basis.hinge.x) * basis.ax + (p.y - basis.hinge.y) * basis.ay),
+    y: sign * (-(p.x - basis.hinge.x) * basis.ay + (p.y - basis.hinge.y) * basis.ax),
+  });
+  const corners = [
+    { x: 0, y: 0 },
+    { x: width, y: 0 },
+    { x: width, y: height },
+    { x: 0, y: height },
+  ].map(map);
+  const minX = Math.floor(Math.min(...corners.map((p) => p.x))) - 2;
+  const minY = Math.floor(Math.min(...corners.map((p) => p.y))) - 2;
   const canvas = document.createElement('canvas');
-  const image = part.image;
-  canvas.width = image.naturalWidth;
-  canvas.height = image.naturalHeight;
+  canvas.width = Math.ceil(Math.max(...corners.map((p) => p.x))) - minX + 2;
+  canvas.height = Math.ceil(Math.max(...corners.map((p) => p.y))) - minY + 2;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(image, 0, 0);
-  const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-  const measured = measureTempleAlpha(pixels, canvas.width, canvas.height, left);
-  const calibration = modernClearTempleCalibration[part.src.split('/').pop()];
-  if (
-    calibration &&
-    (calibration.normalized.naturalWidth !== canvas.width ||
-      calibration.normalized.naturalHeight !== canvas.height)
-  )
-    throw new Error('Normalized temple dimensions do not match hinge calibration.');
-  const geometry = calibration?.normalized ?? measured;
+  const a = sign * basis.ax,
+    b = -sign * basis.ay,
+    c = sign * basis.ay,
+    d = sign * basis.ax;
+  ctx.setTransform(
+    a,
+    b,
+    c,
+    d,
+    -a * basis.hinge.x - c * basis.hinge.y - minX,
+    -b * basis.hinge.x - d * basis.hinge.y - minY,
+  );
+  ctx.drawImage(source, 0, 0);
+  ctx.resetTransform();
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  const bounds = alphaBounds(data, canvas.width, canvas.height);
+  const hinge = { x: -minX, y: -minY },
+    end = map(basis.tip);
+  const tip = { x: end.x - minX, y: end.y - minY };
   let visible = 0,
     opaque = 0,
-    alphaSum = 0,
-    earWeight = 0,
-    earY = 0;
-  const b = part.bounds,
-    strip = Math.max(1, Math.ceil(b.width * 0.02));
-  for (let y = 0; y < canvas.height; y++)
-    for (let x = 0; x < canvas.width; x++) {
-      const alpha = pixels[(y * canvas.width + x) * 4 + 3];
-      if (!alpha) continue;
+    sum = 0;
+  for (let i = 3; i < data.length; i += 4)
+    if (data[i]) {
       visible++;
-      alphaSum += alpha;
-      if (alpha >= 240) opaque++;
-      if (left ? x < b.x + strip : x >= b.x + b.width - strip) {
-        earWeight += alpha;
-        earY += (y - b.y + 0.5) * alpha;
-      }
+      sum += data[i];
+      if (data[i] >= 240) opaque++;
     }
   return {
     ...part,
-    hingePivot: { x: (geometry.hinge.x - b.x) / b.width, y: (geometry.hinge.y - b.y) / b.height },
-    visibleHinge: geometry.hinge,
-    visibleTip: geometry.tip,
-    visibleLength: geometry.visibleLength,
-    normalizedAxisDegrees: measured.axisDegrees,
-    earPivot: { x: left ? 0 : 1, y: earWeight ? earY / earWeight / b.height : 0.9 },
+    image: canvas,
+    bounds,
+    hingePivot: { x: (hinge.x - bounds.x) / bounds.width, y: (hinge.y - bounds.y) / bounds.height },
+    visibleHinge: hinge,
+    visibleTip: tip,
+    visibleLength: basis.length,
+    normalizedAxisDegrees: 0,
+    earPivot: { x: left ? 0 : 1, y: (tip.y - bounds.y) / bounds.height },
     inspection: {
-      decoded: image.complete && image.naturalWidth > 0,
-      naturalWidth: canvas.width,
-      naturalHeight: canvas.height,
+      decoded: source.complete ?? true,
+      naturalWidth: width,
+      naturalHeight: height,
       visiblePixels: visible,
       opaquePixels: opaque,
-      meanVisibleAlpha: alphaSum / visible / 255,
-      bounds: b,
-      alphaGeometry: geometry,
-      originalAxisDegrees: calibration?.original.axisDegrees ?? measured.axisDegrees,
+      meanVisibleAlpha: sum / visible / 255,
+      bounds,
+      alphaGeometry: { hinge, tip, visibleLength: basis.length },
+      originalAxisDegrees: basis.measured.axisDegrees,
+      sourceAnchors: anchors ?? null,
     },
   };
 }
@@ -206,7 +230,7 @@ function lensOccluder(front) {
   };
 }
 
-export async function loadGlassesAssembly(frontFrameSrc, leftTempleSrc, rightTempleSrc) {
+export async function loadGlassesAssembly(frontFrameSrc, leftTempleSrc, rightTempleSrc, fit = {}) {
   const [front, leftTemple, rightTemple] = await Promise.all([
     loadAccessoryAsset(frontFrameSrc, null, true),
     loadAccessoryAsset(leftTempleSrc, null, true),
@@ -215,7 +239,7 @@ export async function loadGlassesAssembly(frontFrameSrc, leftTempleSrc, rightTem
   return {
     ...front,
     ...lensOccluder(front),
-    leftTemple: inspectTemple(leftTemple, true),
-    rightTemple: inspectTemple(rightTemple, false),
+    leftTemple: inspectTemple(leftTemple, true, fit.templeSourceAnchors?.left),
+    rightTemple: inspectTemple(rightTemple, false, fit.templeSourceAnchors?.right),
   };
 }

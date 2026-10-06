@@ -27,3 +27,44 @@ export function estimateHeadShape(surface, yaw = 0, pitch = 0) {
     sideDepth: clamp((depths[2] + depths[3]) / 2, 0.12, 0.42),
   };
 }
+
+// The measured mesh and glasses must use the SAME filtered orientation. Filtering
+// only the root while retaining a raw camera-space mesh lets the mask overtake
+// the hinges on a turn. Remove measured rigid motion before filtering face shape.
+export function alignFaceSurface(previous, measured, filtered, elapsedMs) {
+  if (!measured.bridgeLocked || !measured.faceSurface?.length) return filtered;
+  const yaw = measured.rawYawDegrees ?? 0,
+    pitch = measured.pitchDegrees ?? 0;
+  const scale = Math.max(0.55, Math.cos((yaw * Math.PI) / 180));
+  const local = measured.faceSurface.map((p) =>
+    unrotateFacePoint(
+      {
+        x: p.x * scale,
+        y: p.y * scale,
+        z: p.z * scale,
+      },
+      yaw,
+      pitch,
+    ),
+  );
+  const alpha = 1 - Math.exp(-Math.max(0, elapsedMs) / 80);
+  const shape = local.map((p, i) => {
+    const old = previous?.headLocalSurface?.[i];
+    return old
+      ? Object.fromEntries(['x', 'y', 'z'].map((k) => [k, old[k] + alpha * (p[k] - old[k])]))
+      : p;
+  });
+  const y = ((filtered.rawYawDegrees ?? 0) * Math.PI) / 180;
+  const t = ((filtered.pitchDegrees ?? 0) * Math.PI) / 180;
+  const cos = Math.max(0.55, Math.cos(y));
+  const surface = shape.map((p) => {
+    const py = Math.cos(t) * p.y - Math.sin(t) * p.z;
+    const pz = Math.sin(t) * p.y + Math.cos(t) * p.z;
+    return {
+      x: (Math.cos(y) * p.x - Math.sin(y) * pz) / cos,
+      y: py / cos,
+      z: (Math.sin(y) * p.x + Math.cos(y) * pz) / cos,
+    };
+  });
+  return { ...filtered, headLocalSurface: shape, faceSurface: surface };
+}

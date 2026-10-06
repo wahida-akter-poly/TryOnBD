@@ -62,8 +62,27 @@ export function applyLensSurface(asset, calibration) {
     ctx.drawImage(image, 0, 0);
     ctx.restore();
   }
+  const mask = document.createElement('canvas');
+  mask.width = w;
+  mask.height = h;
+  const depth = mask.getContext('2d');
+  depth.fillStyle = '#fff';
+  for (const lens of calibration.apertures) {
+    depth.beginPath();
+    depth.moveTo(...lens.outline[0]);
+    for (const p of lens.outline.slice(1)) depth.lineTo(...p);
+    depth.closePath();
+    depth.fill();
+  }
   return {
     ...asset,
+    lensOccluder: { image: mask, bounds: asset.bounds },
+    lensOutlines: calibration.apertures.map((l) =>
+      l.outline.map(([x, y]) => ({
+        x: (x - asset.bounds.x) / asset.bounds.width,
+        y: (y - asset.bounds.y) / asset.bounds.height,
+      })),
+    ),
     image: canvas,
     lensMaterial: { tints, source: asset.src },
     originalImage: image,

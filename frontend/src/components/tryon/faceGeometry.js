@@ -1,9 +1,9 @@
-import { estimateHeadShape } from './eyewearHeadGeometry.js';
+import { estimateHeadShape, alignFaceSurface } from './eyewearHeadGeometry.js';
 import { createEyewearRig, drawEyewearRig, rigidTempleMesh } from './eyewearRig.js';
 import { fallbackYawDegrees, normalizeYawDegrees } from './headPose.js';
 import { faceToCanvas } from './earTracking.js';
 import { templeImagePlacement } from './templeAssetGeometry.js';
-import { extractHeadSides, templeQuad } from './templeGeometry.js';
+import { extractHeadSides, templeQuad, faceOvalLandmarks } from './templeGeometry.js';
 
 export const defaultControls = () => ({
   auto: true,
@@ -38,7 +38,8 @@ export function normalizeYaw(rawYaw) {
 // Angles interpolate along the shortest arc, including across +/- PI.
 export function smoothAnchors(previous, next, elapsedMs) {
   if (!next) return null;
-  if (!previous || previous.length !== next.length) return next.map((a) => ({ ...a }));
+  if (!previous || previous.length !== next.length)
+    return next.map((a) => alignFaceSurface(null, a, { ...a }, elapsedMs));
   return next.map((anchor, index) => {
     const old = previous[index];
     const delta = Math.atan2(
@@ -78,7 +79,7 @@ export function smoothAnchors(previous, next, elapsedMs) {
     );
     const yawAlpha =
       1 - Math.exp(-Math.max(0, elapsedMs) / (trackingConfig.yawSmoothingMs - 45 * turn));
-    return {
+    const filtered = {
       ...anchor,
       ...(anchor.headShape
         ? {
@@ -120,6 +121,10 @@ export function smoothAnchors(previous, next, elapsedMs) {
           }
         : {}),
     };
+    const aligned = alignFaceSurface(old, anchor, filtered, elapsedMs);
+    if (aligned.headLocalSurface)
+      aligned.headContour = faceOvalLandmarks.map((id) => aligned.faceSurface[id]);
+    return aligned;
   });
 }
 

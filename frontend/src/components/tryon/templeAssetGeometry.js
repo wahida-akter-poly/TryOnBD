@@ -80,3 +80,63 @@ export function templeImagePlacement(length, bounds, hinge, tip) {
     visibleLength,
   };
 }
+
+// Shaft basis in source pixels. Explicit normalized anchors also support
+// vertically photographed or reversed cutouts without changing handedness.
+export function templeSourceBasis(pixels, width, height, left, anchors) {
+  const measured = measureTempleAlpha(pixels, width, height, left);
+  let hinge, tip, ax, ay;
+  if (anchors) {
+    const point = (p) => {
+      if (!p || ![p.x, p.y].every((v) => Number.isFinite(v) && v >= 0 && v <= 1))
+        throw new Error('Temple source anchors must be normalized PNG coordinates.');
+      return { x: p.x * width, y: p.y * height };
+    };
+    hinge = point(anchors.hinge);
+    tip = point(anchors.tip);
+    const shaft = anchors.shaft ? point(anchors.shaft) : tip;
+    const length = Math.hypot(shaft.x - hinge.x, shaft.y - hinge.y);
+    if (length < 1) throw new Error('Temple source hinge and tip must be distinct.');
+    ax = (shaft.x - hinge.x) / length;
+    ay = (shaft.y - hinge.y) / length;
+  } else {
+    const angle = (measured.axisDegrees * Math.PI) / 180;
+    ax = Math.cos(angle);
+    ay = Math.sin(angle);
+    let lo = Infinity,
+      hi = -Infinity;
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < width; x++) {
+        if (pixels[(y * width + x) * 4 + 3] < 8) continue;
+        const t = (x + 0.5) * ax + (y + 0.5) * ay;
+        lo = Math.min(lo, t);
+        hi = Math.max(hi, t);
+      }
+    const band = Math.max(1, (hi - lo) * 0.02);
+    const end = (high) => {
+      let w = 0,
+        sx = 0,
+        sy = 0;
+      for (let y = 0; y < height; y++)
+        for (let x = 0; x < width; x++) {
+          const a = pixels[(y * width + x) * 4 + 3];
+          if (a < 8) continue;
+          const t = (x + 0.5) * ax + (y + 0.5) * ay;
+          if (high ? t < hi - band : t > lo + band) continue;
+          w += a;
+          sx += a * (x + 0.5);
+          sy += a * (y + 0.5);
+        }
+      return { x: sx / w, y: sy / w };
+    };
+    hinge = end(left);
+    tip = end(!left);
+    if (left) {
+      ax = -ax;
+      ay = -ay;
+    }
+  }
+  const length = (tip.x - hinge.x) * ax + (tip.y - hinge.y) * ay;
+  if (!Number.isFinite(length) || length < 1) throw new Error('Temple shaft has no usable length.');
+  return { hinge, tip, ax, ay, length, measured };
+}

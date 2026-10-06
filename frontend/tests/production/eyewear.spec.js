@@ -19,11 +19,11 @@ test.beforeAll(async () => {
       import { faceMeshTriangles } from './src/components/tryon/eyewearWebGL.js';
       import { drawTempleQuad } from './src/components/tryon/templeGeometry.js';
       import { acquireFaceLandmarker } from './src/services/faceLandmarker.js';
-      import { loadGlassesAssembly, loadAccessoryAsset } from './src/components/tryon/accessoryAssets.js';
+      import { loadGlassesAssembly, loadAccessoryAsset, inspectTemple } from './src/components/tryon/accessoryAssets.js';
       import { resolveHeadPose } from './src/components/tryon/headPose.js';
-      import { faceAnchors, defaultControls, accessoryTransform, drawAccessory } from './src/components/tryon/faceGeometry.js';
+      import { faceAnchors, smoothAnchors, defaultControls, accessoryTransform, drawAccessory } from './src/components/tryon/faceGeometry.js';
       import { createEyewearRig, rigidTempleMesh } from './src/components/tryon/eyewearRig.js';
-      import { accessoryStyles } from './src/data/faceAccessories.js';
+      import { accessoryStyles, sunglassesAssetFor } from './src/data/faceAccessories.js';
       import { applyLensSurface } from './src/components/tryon/lensSurface.js';
       window.checkLensSurface = async () => {
         const style=accessoryStyles.find(s=>s.id==='aviator');
@@ -39,13 +39,61 @@ test.beforeAll(async () => {
         return {src:asset.src,source:asset.lensMaterial.source,before,after,
           originalHardware:pixel(ctx,80,328),hardware:pixel(material,80,328)};
       };
-      window.checkEyewear = async () => {
+      window.checkLiveTempleMapping = async () => {
+        const image=new Image();image.src='/assets/portrait.jpg';await image.decode();
+        const lease=acquireFaceLandmarker(),found=await lease.detect(image,false);lease.release();
+        const fit=accessoryStyles.find(s=>s.id==='clear');
+        const asset=await loadGlassesAssembly(fit.frontFrameSrc,fit.leftTempleSrc,fit.rightTempleSrc);
+        const base=faceAnchors(found.landmarks,image.width,image.height,'sunglasses',resolveHeadPose(null,found.matrix,0,false,0))[0];
+        const controls={...defaultControls(),mirror:false};
+        const blank=document.createElement('canvas');blank.width=asset.image.width;blank.height=asset.image.height;
+        const count=context=>{const pixels=context.getImageData(0,0,image.width,image.height).data;
+          let n=0;for(let i=3;i<pixels.length;i+=4)if(pixels[i]>=20)n++;return n;};
+        const variants=[{name:'original',asset}];
+        for(const quarterTurn of [1,2,3]) {
+          const parts={};
+          for(const [name,left] of [['leftTemple',true],['rightTemple',false]]) {
+            const source=asset[name],w=source.image.width,h=source.image.height;
+            const canvas=document.createElement('canvas');canvas.width=quarterTurn%2?h:w;canvas.height=quarterTurn%2?w:h;
+            const ctx=canvas.getContext('2d');ctx.translate(canvas.width/2,canvas.height/2);ctx.rotate(quarterTurn*Math.PI/2);ctx.drawImage(source.image,-w/2,-h/2);
+            const map=p=>{const x=p.x-w/2,y=p.y-h/2,a=quarterTurn*Math.PI/2;
+              return {x:(canvas.width/2+x*Math.cos(a)-y*Math.sin(a))/canvas.width,y:(canvas.height/2+x*Math.sin(a)+y*Math.cos(a))/canvas.height};};
+            // Source shaft axis, not hooked tip, defines the local vertical basis.
+            const anchors={hinge:map(source.visibleHinge),tip:map({x:source.visibleHinge.x+(left?-1:1)*source.visibleLength,y:source.visibleHinge.y})};
+            parts[name]=inspectTemple({image:canvas,src:source.src,bounds:source.bounds},left,anchors);
+          }
+          variants.push({name:'source-rotated-'+quarterTurn*90,asset:{...asset,...parts}});
+        }
+        const results=[];
+        for(const variant of variants) {
+          let previous=null;
+          for(const yaw of [0,15,30,15,0,-15,-30,-15,0]) {
+            const raw=poseFixture(base,{yaw,pitch:yaw/5,roll:yaw/3},fit).anchor;
+            previous=smoothAnchors(previous,[raw],33);
+            const a=previous[0],transform=accessoryTransform(a,controls,image.width,image.height,asset.bounds.width/asset.bounds.height,fit),rig=createEyewearRig(a,transform,fit);
+            const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
+            const ctx=canvas.getContext('2d',{willReadFrequently:true});
+            const roots={},visible={};
+            for(const [name,side] of [['left',-1],['right',1]]) {
+              const solo={...variant.asset,image:blank,leftTemple:side<0?variant.asset.leftTemple:null,rightTemple:side>0?variant.asset.rightTemple:null};
+              ctx.clearRect(0,0,canvas.width,canvas.height);drawAccessory(ctx,solo,[a],controls,image.width,image.height,fit);
+              const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data,h=rig.screen(side<0?rig.front.leftHinge:rig.front.rightHinge);
+              visible[name]=count(ctx);roots[name]=0;
+              for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++)if(pixels[(y*canvas.width+x)*4+3]>=20&&Math.hypot(x+.5-h.x,y+.5-h.y)<transform.width*.028)roots[name]++;
+            }
+            results.push({variant:variant.name,yaw,filteredYaw:a.rawYawDegrees,roots,visible,renderer:canvas.dataset.eyewearRenderer});
+          }
+        }
+        return results;
+      };
+      window.checkEyewear = async (product) => {
         const image = new Image(); image.src = '/assets/portrait.jpg'; await image.decode();
         const lease = acquireFaceLandmarker();
         const found = await lease.detect(image, false); lease.release();
         if (!found?.matrix) throw new Error('Real face matrix unavailable');
-        const fit = accessoryStyles.find(s=>s.id==='clear');
-        const asset = await loadGlassesAssembly(fit.frontFrameSrc,fit.leftTempleSrc,fit.rightTempleSrc);
+        const assembly=product?sunglassesAssetFor(product):accessoryStyles.find(s=>s.id==='clear');
+        const fit=assembly.fit??assembly;
+        const asset=applyLensSurface(await loadGlassesAssembly(assembly.frontFrameSrc,assembly.leftTempleSrc,assembly.rightTempleSrc,fit),fit.lensSurface);
         const blank=document.createElement('canvas');blank.width=asset.image.width;blank.height=asset.image.height;
         const basePose=resolveHeadPose(null,found.matrix,0,false,0);
         const base=faceAnchors(found.landmarks,image.width,image.height,'sunglasses',basePose)[0];
@@ -363,5 +411,84 @@ test('real Aviator lens material removes baked rear-arm ghosts while keeping ori
       expect(Math.abs(pixel[c] - data.after[0][c])).toBeLessThanOrEqual(2);
     expect(pixel[3]).toBeGreaterThan(210);
     expect(pixel[3]).toBeLessThan(235);
+  }
+});
+
+test('rotated photographic sources and live pose reversals keep visible attached temple roots', async ({
+  page,
+}) => {
+  test.setTimeout(120000);
+  await setup(page);
+  await page.goto('/try-on?productId=2');
+  await page.addScriptTag({ content: harness });
+  const results = await page.evaluate(() => window.checkLiveTempleMapping());
+  console.log('Live root and rotated-source checks:', JSON.stringify(results));
+  expect(results).toHaveLength(36);
+  for (const r of results) {
+    expect(r.renderer).toBe('WEBGL_FACE_DEPTH');
+    for (const side of ['left', 'right']) {
+      expect(r.roots[side], JSON.stringify(r)).toBeGreaterThan(12);
+      expect(r.visible[side], JSON.stringify(r)).toBeGreaterThan(80);
+    }
+  }
+});
+
+test('Golden Frame genuine package fits all eight head poses with its own metadata and pixels', async ({
+  page,
+}) => {
+  test.setTimeout(120000);
+  const manifest = JSON.parse(
+    await readFile('public/assets/products/eyewear/golden-frame/product.json', 'utf8'),
+  );
+  const url = '/assets/products/eyewear/golden-frame/';
+  const product = {
+    ...manifest,
+    id: 906,
+    imageUrl: url + manifest.frontAsset,
+    arMetadata: {
+      frontAsset: url + manifest.frontAsset,
+      leftTempleAsset: url + manifest.leftTempleAsset,
+      rightTempleAsset: url + manifest.rightTempleAsset,
+      fitProfile: manifest.fitProfile,
+    },
+  };
+  await page.route('**/api/products/906', (route) => route.fulfill({ json: product }));
+  await page.goto('/try-on?productId=906');
+  await page.addScriptTag({ content: harness });
+  const data = await page.evaluate((p) => window.checkEyewear(p), product);
+  console.log('Golden Frame pose pixel checks:', JSON.stringify(data));
+  for (const r of data.results) {
+    await page
+      .locator('canvas[data-rig-pose="' + r.pose.name + '"]')
+      .screenshot({ path: 'artifacts/golden-frame-' + r.pose.name + '.png' });
+    expect(r.renderer).toBe('WEBGL_FACE_DEPTH');
+    expect(r.counts.intrusion).toBe(0);
+    expect(r.framePixels / r.unmaskedFrame).toBeGreaterThan(0.9);
+    for (const t of r.temples) {
+      expect(t.jointError).toBeLessThan(0.001);
+      expect(t.opacity).toBe(1);
+    }
+    for (const side of ['left', 'right'])
+      expect(r.roots[side], JSON.stringify(r)).toBeGreaterThan(12);
+    if (r.pose.yaw === 0) {
+      expect(r.counts.left).toBeGreaterThan(80);
+      expect(r.counts.right).toBeGreaterThan(80);
+      expect(r.wingExtent).toBeLessThan(0.11);
+    } else {
+      const near = r.pose.yaw > 0 ? 'left' : 'right',
+        far = r.pose.yaw > 0 ? 'right' : 'left';
+      expect(r.counts[near]).toBeGreaterThan(r.counts[far]);
+      expect(r.counts[far]).toBeGreaterThan(12);
+      expect(r.headOnly[far]).toBeLessThan(r.unmasked[far]);
+      if (Math.abs(r.pose.yaw) === 30) expect(r.counts[far] / r.unmasked[far]).toBeLessThan(0.4);
+    }
+  }
+  for (const sign of [-1, 1]) {
+    const near = sign > 0 ? 'left' : 'right';
+    const frontal = data.results[0],
+      fifteen = data.results.find((r) => r.pose.yaw === 15 * sign),
+      thirty = data.results.find((r) => r.pose.yaw === 30 * sign);
+    expect(fifteen.counts[near]).toBeGreaterThan(frontal.counts[near]);
+    expect(thirty.counts[near]).toBeGreaterThan(fifteen.counts[near]);
   }
 });

@@ -93,6 +93,38 @@ class ProductAssetSyncTests {
         }
         assertEquals(0,products.count());
     }
+    @Test void sourceTempleAnchorsPersistThroughRepeatSyncAndRejectDegenerateAxes() throws Exception {
+        var m=manifest("EYEWEAR"); m.put("category","Eyewear");
+        var left=Map.of("hinge",Map.of("x",.5,"y",.1),"tip",Map.of("x",.5,"y",.9));
+        var right=Map.of("hinge",Map.of("x",.9,"y",.5),"tip",Map.of("x",.1,"y",.5));
+        m.put("fitProfile",Map.of("templeSourceAnchors",Map.of("left",left,"right",right)));
+        m.put("leftTempleAsset","left-temple.png");m.put("rightTempleAsset","right-temple.png");
+        var p=folder("eyewear","vertical-source",m);png(p.resolve("left-temple.png"));png(p.resolve("right-temple.png"));
+        var first=sync.sync(discover(),null,false).getFirst();entities.flush();entities.clear();
+        assertEquals("UNCHANGED",sync.sync(discover(),null,false).getFirst().action());
+        var stored=products.findById(first.productId()).orElseThrow().getArMetadata().get("fitProfile");
+        assertEquals(m.get("fitProfile"),stored);
+        for(var bad:List.of(Map.of("hinge",Map.of("x",.5,"y",.5),"tip",Map.of("x",.5,"y",.5)),
+            Map.of("hinge",Map.of("x",-1,"y",.1),"tip",Map.of("x",.5,"y",.9)))) {
+            m.put("fitProfile",Map.of("templeSourceAnchors",Map.of("left",bad,"right",right)));write(p,m);
+            assertThrows(IllegalArgumentException.class,()->discover());
+        }
+        assertEquals(1,products.count());
+    }
+    @Test void boundedPhotographicLensCalibrationPersistsAndRejectsInvalidCoordinates() throws Exception {
+        var m=manifest("EYEWEAR");m.put("category","Eyewear");
+        var aperture=Map.of("outline",List.of(List.of(0,0),List.of(3,0),List.of(3,3)),"samples",List.of(List.of(1,1)));
+        var lens=Map.of("width",4,"height",4,"opacity",.6,"apertures",List.of(aperture,aperture));
+        m.put("fitProfile",Map.of("lensSurface",lens));var p=folder("eyewear","tinted-frame",m);
+        var result=sync.sync(discover(),null,false).getFirst();entities.flush();entities.clear();
+        assertEquals("UNCHANGED",sync.sync(discover(),null,false).getFirst().action());
+        assertNotNull(products.findById(result.productId()).orElseThrow().getArMetadata().get("fitProfile"));
+        for(var bad:List.of(Map.of("width",4,"height",4,"opacity",0,"apertures",List.of(aperture,aperture)),
+            Map.of("width",4,"height",4,"apertures",List.of(aperture)),
+            Map.of("width",4,"height",4,"apertures",List.of(Map.of("outline",List.of(List.of(-1,0),List.of(3,0),List.of(3,3)),"samples",List.of(List.of(1,1))),aperture)))) {
+            m.put("fitProfile",Map.of("lensSurface",bad));write(p,m);assertThrows(IllegalArgumentException.class,()->discover());
+        }
+    }
     @Test void repeatRunKeepsIdentityAndReportsUnchangedAfterDatabaseReload() throws Exception {
         var m = manifest("NECKLACE"); m.put("style", "CHOKER"); m.put("fitProfile", Map.of("widthRatio", .8)); folder("jewelry", "choker", m);
         var first = sync.sync(discover(), null, false).getFirst(); entities.flush(); entities.clear();
