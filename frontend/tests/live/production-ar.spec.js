@@ -31,8 +31,8 @@ test('live PostgreSQL product-by-id APIs and real eyewear/shirt photo flows', as
       'src',
       product.imageUrl,
     );
-    await page.getByRole('link', { name: 'Try Virtually', exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`productId=${product.id}$`));
+    await page.getByRole('button', { name: 'Try Virtually', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/products/${product.id}[?]tryOn=true$`));
     await page
       .getByLabel('Upload photo', { exact: true })
       .setInputFiles(

@@ -49,8 +49,8 @@ test('live Golden Frame and Modern Clear APIs, storefront, details and own-asset
     await expect(page.getByText('Sold by ' + product.sellerName, { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Sign in to shop', exact: true })).toBeVisible();
     await expect(page.getByText(product.stockQuantity + ' available', {exact:true})).toBeVisible();
-    await page.getByRole('link', { name: 'Try Virtually', exact: true }).click();
-    await expect(page).toHaveURL(new RegExp('productId=' + product.id + '$'));
+    await page.getByRole('button', { name: 'Try Virtually', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp('/products/' + product.id + '[?]tryOn=true$'));
     await page
       .getByLabel('Upload photo', { exact: true })
       .setInputFiles('tests/fixtures/ear-front.jpg');
@@ -76,7 +76,7 @@ test('live Golden Frame and Modern Clear APIs, storefront, details and own-asset
 test('live existing shirt keeps its backend-driven pose fitting',async({page,request})=>{
  const products=await (await request.get('/api/products')).json();
  const shirt=products.find(p=>p.arType==='SHIRT');expect(shirt).toBeTruthy();
- await page.goto('/products/'+shirt.id);await page.getByRole('link',{name:'Try Virtually',exact:true}).click();
+ await page.goto('/products/'+shirt.id);await page.getByRole('button',{name:'Try Virtually',exact:true}).click();
  await page.getByLabel('Upload photo',{exact:true}).setInputFiles('tests/fixtures/shirt-hands-on-hips.jpg');
  await expect(page.getByText('Torso fitted',{exact:true})).toBeVisible({timeout:60000});
  await page.screenshot({path:'artifacts/live-eyewear-fix-shirt-regression.png',fullPage:true});

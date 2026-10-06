@@ -43,8 +43,8 @@ test('live PostgreSQL necklace catalog, details, MediaPipe photo and export', as
     product.imageUrl,
   );
   await expect(page.getByText(`Sold by ${product.sellerName}`, { exact: true })).toBeVisible();
-  await page.getByRole('link', { name: 'Try Virtually', exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`productId=${product.id}$`));
+  await page.getByRole('button', { name: 'Try Virtually', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/products/${product.id}[?]tryOn=true$`));
   await expect(page.getByLabel('Necklace try-on canvas')).toHaveAttribute(
     'data-overlay-src',
     product.imageUrl,
@@ -72,6 +72,7 @@ test('live PostgreSQL necklace catalog, details, MediaPipe photo and export', as
   const download = await downloadEvent;
   expect(await download.failure()).toBeNull();
   await download.saveAs('artifacts/real-necklace-capture.png');
+  await page.getByRole('button', { name: 'Close virtual try-on' }).click();
   if (product.stockQuantity === 0)
     await expect(page.getByRole('button', { name: 'Add to Cart', exact: true })).toBeDisabled();
   for (const path of [

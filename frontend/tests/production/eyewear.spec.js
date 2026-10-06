@@ -385,9 +385,9 @@ for (const product of [realFrames, goldenFrames])
         'src',
         product.imageUrl,
       );
-      await page.getByRole('link', { name: 'Try Virtually', exact: true }).click();
-      await expect(page).toHaveURL(new RegExp('productId=' + product.id + '$'));
-      await expect(page.getByText(product.name, { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Try Virtually', exact: true }).click();
+      await expect(page).toHaveURL(new RegExp('/products/' + product.id + '[?]tryOn=true$'));
+      await expect(page.getByRole('dialog', { name: product.name, exact: true })).toBeVisible();
       await expect(page.getByLabel('AR diagnostics')).toHaveCount(0);
       await page
         .getByLabel('Upload photo', { exact: true })

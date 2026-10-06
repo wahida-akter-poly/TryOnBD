@@ -39,7 +39,7 @@ test('live approved choker is one PostgreSQL product and renders its own CHOKER 
   await expect(
     page.getByText(`${manifest.stockQuantity} available`, { exact: true }),
   ).toBeVisible();
-  await page.getByRole('link', { name: 'Try Virtually', exact: true }).click();
+  await page.getByRole('button', { name: 'Try Virtually', exact: true }).click();
   await expect(page.getByLabel('Necklace try-on canvas')).toHaveAttribute(
     'data-necklace-style',
     'CHOKER',

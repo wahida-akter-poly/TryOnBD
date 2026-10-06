@@ -15,7 +15,7 @@ export default function Home() {
           <Link className="btn btn-primary" to="/products">
             Shop the collection
           </Link>
-          <Link className="btn btn-ghost" to="/try-on">
+          <Link className="btn btn-ghost" to="/products">
             Explore virtual try-on
           </Link>
         </div>

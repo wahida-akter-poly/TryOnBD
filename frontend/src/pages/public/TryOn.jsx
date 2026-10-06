@@ -16,6 +16,7 @@ import ShirtStudio from '../../components/tryon/ShirtStudio.jsx';
 import { shirtCalibration } from '../../data/shirtProducts.js';
 import NecklaceOverlay from '../../components/tryon/NecklaceOverlay.jsx';
 import { necklaceCalibration } from '../../components/tryon/necklaceCalibration.js';
+import { validPD } from '../../components/tryon/pupillaryDistance.js';
 
 const blobFrom = (canvas) =>
   new Promise((resolve, reject) =>
@@ -110,11 +111,12 @@ export default function TryOn() {
     );
   return <TryOnStudio key={product.id} product={product} />;
 }
-function TryOnStudio({ product }) {
+export function TryOnStudio({ product, embedded = false }) {
   const { state, identity, refreshAccount, addToCart, registerMedia, toast } = useApp();
   const [params, setParams] = useSearchParams();
   const arDebug = product.engine === 'sunglasses' && params.get('arDebug') === '1';
   const [adjustFit, setAdjustFit] = useState(false);
+  const [manualPD, setManualPD] = useState('');
   const products = state.products.filter((p) => p.arAvailable);
   const mode = modeFor(product),
     isAR = mode === 'sunglasses';
@@ -205,6 +207,9 @@ function TryOnStudio({ product }) {
     setInputError('');
     setView('after');
   }, [mode, camera.stop, changeSource]);
+  useEffect(() => {
+    if (embedded) void camera.start();
+  }, [embedded, camera.start]);
   useEffect(() => {
     // A captured result belongs to the product/style captured, never relabel it.
     setSource((old) => (old?.composite ? null : old));
@@ -382,6 +387,7 @@ function TryOnStudio({ product }) {
             view={view}
             compare={compare}
             trackingEnabled={isAR}
+            manualPD={validPD(Number(manualPD)) ? Number(manualPD) : null}
             retry={retry}
             onStatus={onStatus}
           />
@@ -395,6 +401,30 @@ function TryOnStudio({ product }) {
         </div>
       )}
     </div>
+  );
+  if (embedded) return (
+    <section className="tryon-modal-studio" aria-label="Virtual fitting studio">
+      <div className="tryon-modal-preview">{canvasStage}</div>
+      <aside className="tryon-modal-toolbar">
+        <p role="status" className="tryon-modal-tracking">{source?.composite ? 'Captured' : status.tracking === 'Active' ? isAR ? 'Frame fitted' : isShirt ? 'Torso fitted' : 'Pose detected' : cameraBusy ? 'Starting camera…' : status.tracking}</p>
+        {notice && <p role="alert">{notice} <button type="button" onClick={() => setRetry((n) => n + 1)}>Retry detection</button></p>}
+        {isAR && <div className="tryon-modal-pd">
+          <span>{validPD(Number(manualPD)) ? 'Manual PD' : 'Estimated PD'}</span>
+          <strong aria-label="Pupillary distance">{validPD(Number(manualPD)) ? `${Number(manualPD).toFixed(1)} mm` : status.estimatedPD != null ? `${status.estimatedPD.toFixed(1)} mm` : 'PD --'}</strong>
+          <label>Manual PD (optional)<span><input aria-label="Manual PD" type="number" min="45" max="80" step="0.1" placeholder="Auto" value={manualPD} onChange={(event) => setManualPD(event.target.value)} /> mm</span></label>
+          {manualPD !== '' && !validPD(Number(manualPD)) && <small>Enter 45–80 mm or clear to estimate.</small>}
+          <small>Estimated for virtual fitting. Not for prescription measurement.</small>
+        </div>}
+        <div className="tryon-modal-actions">
+          <Button disabled={!source || !canExport} onClick={source?.live ? capture : download}><Camera size={20} />{source?.live ? 'Capture' : 'Download PNG'}</Button>
+          <Button variant="ghost" disabled={cameraBusy || busy} onClick={() => { setInputError(''); camera.start(); }}><Camera size={16} />{source?.composite ? 'Retake' : 'Start Camera'}</Button>
+          <label className="btn btn-ghost"><Upload size={16} />{loadingPhoto ? 'Loading photo…' : 'Upload photo'}<input className="sr-only" type="file" aria-label="Upload photo" accept="image/jpeg,image/png,image/webp" onChange={upload} disabled={loadingPhoto || busy} /></label>
+          {source?.live && <Button variant="ghost" onClick={() => { camera.stop(); changeSource(null); }}>Stop Camera</Button>}
+          {source?.live && camera.devices.length > 1 && <Button variant="ghost" onClick={camera.switchCamera}>Switch Camera</Button>}
+          {source?.live && canExport && <Button variant="ghost" onClick={download}><Download size={16} />Download PNG</Button>}
+        </div>
+      </aside>
+    </section>
   );
   if (isShirt)
     return (

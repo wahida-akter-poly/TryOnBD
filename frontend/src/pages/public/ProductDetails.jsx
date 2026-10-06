@@ -1,13 +1,22 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { services } from '../../services';
 import { normalizeProduct } from '../../services/catalog';
 import { errorMessage } from '../../services/api';
 import { useApp } from '../../context/AppContext';
 import { Button, Price, LoadingState, ErrorState } from '../../components/common/UI';
 import ProductGallery from '../../components/product/ProductGallery';
+import TryOnModal from '../../components/tryon/TryOnModal';
 export default function ProductDetails() {
   const { id } = useParams();
+  const [params, setParams] = useSearchParams();
+  const tryOnOpen = params.get('tryOn') === 'true';
+  function toggleTryOn(open) {
+    const next = new URLSearchParams(params);
+    if (open) next.set('tryOn', 'true');
+    else next.delete('tryOn');
+    setParams(next, { replace: true, preventScrollReset: true });
+  }
   const { state, addToCart, identity } = useApp();
   const [product, setProduct] = useState(null),
     [error, setError] = useState(''),
@@ -57,9 +66,9 @@ export default function ProductDetails() {
           {product.sellerName && <p>Sold by {product.sellerName}</p>}
           <p>{product.stockQuantity > 0 ? `${product.stockQuantity} available` : 'Out of stock'}</p>
           {product.arAvailable && (
-            <Link className="btn btn-primary" to={`/try-on?productId=${product.id}`}>
+            <Button onClick={() => toggleTryOn(true)}>
               Try Virtually
-            </Link>
+            </Button>
           )}{' '}
           {product.engine && !product.arAvailable && (
             <p>Virtual try-on is unavailable for this product.</p>
@@ -86,6 +95,7 @@ export default function ProductDetails() {
           )}
         </section>
       </div>
+      {tryOnOpen && product.arAvailable && <TryOnModal key={product.id} product={product} onClose={() => toggleTryOn(false)} />}
     </div>
   );
 }

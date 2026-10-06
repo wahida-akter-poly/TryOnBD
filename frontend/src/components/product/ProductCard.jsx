@@ -59,7 +59,7 @@ export default function ProductCard({ product }) {
         View Details
       </Link>
       {arCapability(product).available && (
-        <Link className="btn btn-ghost" to={`/try-on?productId=${product.id}`}>
+        <Link className="btn btn-ghost" to={`/products/${product.id}?tryOn=true`}>
           Try Virtually
         </Link>
       )}

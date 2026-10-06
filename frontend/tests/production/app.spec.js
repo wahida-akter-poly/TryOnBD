@@ -314,8 +314,8 @@ test('four necklaces use product metadata styles and selected backend image URLs
       'src',
       product.imageUrl,
     );
-    await page.getByRole('link', { name: 'Try Virtually', exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`productId=${product.id}$`));
+    await page.getByRole('button', { name: 'Try Virtually', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/products/${product.id}[?]tryOn=true$`));
     await expect(page.getByLabel('Necklace try-on canvas')).toHaveAttribute(
       'data-overlay-src',
       product.imageUrl,

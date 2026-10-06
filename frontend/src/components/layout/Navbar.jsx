@@ -16,7 +16,6 @@ export default function Navbar() {
               {group}
             </Link>
           ))}
-          <Link to="/try-on">Try-On</Link>
           <Link to="/checkout">Cart ({state.cart.reduce((n, item) => n + item.quantity, 0)})</Link>
           {identity ? (
             <>

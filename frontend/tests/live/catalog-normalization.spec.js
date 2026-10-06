@@ -54,7 +54,7 @@ test('all five existing PostgreSQL products retain business data and load actual
   for (const product of catalogPackages) {
     await page.goto(`/products/${product.id}`);
     await expectDecodedImage(expect, page, product);
-    await expect(page.getByRole('link', { name: 'Try Virtually', exact: true })).toHaveCount(
+    await expect(page.getByRole('button', { name: 'Try Virtually', exact: true })).toHaveCount(
       product.id === 3 ? 0 : 1,
     );
     await page.screenshot({

@@ -69,7 +69,7 @@ test('approved manifest choker appears through catalog/details and its own CHOKE
   await expect(page.getByRole('heading', { name: manifest.name, exact: true })).toBeVisible();
   await expect(page.getByText(manifest.description, { exact: true })).toBeVisible();
   await expect(page.getByText('Sold by Anzara')).toBeVisible();
-  await page.getByRole('link', { name: 'Try Virtually', exact: true }).click();
+  await page.getByRole('button', { name: 'Try Virtually', exact: true }).click();
   const canvas = page.getByLabel('Necklace try-on canvas');
   await expect(canvas).toHaveAttribute('data-overlay-src', choker.imageUrl);
   await expect(canvas).toHaveAttribute('data-necklace-style', 'CHOKER');

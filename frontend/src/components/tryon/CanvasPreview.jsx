@@ -3,6 +3,7 @@ import { releaseEyewearRenderer } from './eyewearWebGL.js';
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { acquireFaceLandmarker } from '../../services/faceLandmarker';
 import { resolveHeadPose } from './headPose.js';
+import { measurePD, smoothPD, pdScale } from './pupillaryDistance.js';
 import { acquirePoseLandmarker, poseIntervalMs } from '../../services/poseLandmarker.js';
 import { updateEarTracking, fuseEarAnchors } from './earTracking.js';
 import { loadAccessoryAsset, loadGlassesAssembly } from './accessoryAssets';
@@ -45,6 +46,7 @@ const CanvasPreview = forwardRef(function CanvasPreview(
     retry,
     onStatus,
     arDebug = false,
+    manualPD = null,
   },
   ref,
 ) {
@@ -56,8 +58,9 @@ const CanvasPreview = forwardRef(function CanvasPreview(
     wasAuto = useRef(true),
     smoothed = useRef(null),
     raw = useRef(null);
-  const options = useRef({ controls, view, kind, compare, fit });
-  options.current = { controls, view, kind, compare, fit };
+  const options = useRef({ controls, view, kind, compare, fit, manualPD });
+  options.current = { controls, view, kind, compare, fit, manualPD };
+  const pd = useRef(null);
   const render = useRef(() => {});
   const debugLayer = useRef(null);
   const debugPanel = useRef(null);
@@ -136,6 +139,7 @@ const CanvasPreview = forwardRef(function CanvasPreview(
     render.current();
   }, [
     controls,
+    manualPD,
     view,
     compare,
     fit?.widthMultiplier,
@@ -174,6 +178,7 @@ const CanvasPreview = forwardRef(function CanvasPreview(
     landmarks.current = null;
     raw.current = null;
     smoothed.current = null;
+    pd.current = null;
     frame.current = null;
     report.current({
       tracking: !source
@@ -185,6 +190,7 @@ const CanvasPreview = forwardRef(function CanvasPreview(
             : 'Manual',
       detectorError: '',
       ready: false,
+      estimatedPD: null,
     });
     const target = canvas.current,
       ctx = target.getContext('2d');
@@ -221,7 +227,8 @@ const CanvasPreview = forwardRef(function CanvasPreview(
     };
     render.current = (forceAfter = false) => {
       if (!active || !frame.current) return;
-      const { controls: c, kind: k, view: v, compare: split, fit: productFit } = options.current;
+      const { controls: baseControls, kind: k, view: v, compare: split, fit: productFit } = options.current;
+      const c = k === 'sunglasses' ? { ...baseControls, scale: baseControls.scale * pdScale(pd.current, options.current.manualPD) } : baseControls;
       if (debugLayer.current) debugLayer.current.style.visibility = 'hidden';
       if (debugPanel.current) debugPanel.current.style.visibility = 'hidden';
       if (source.composite) delete window.__tryOnBridgeDebug;
@@ -457,6 +464,8 @@ const CanvasPreview = forwardRef(function CanvasPreview(
         const found = await detector.detect(input, Boolean(source.live));
         if (!active) return;
         landmarks.current = displayLandmarks(found?.landmarks, source.mirrored);
+        pd.current = options.current.kind === 'sunglasses' ? smoothPD(pd.current, measurePD(found?.landmarks, target.width, target.height, found?.matrix), performance.now()) : null;
+        report.current({ estimatedPD: pd.current ? Math.round(pd.current.mm * 10) / 10 : null });
         if (found) {
           const now = performance.now();
           if (!faceVisibility(now, lastSeen)) {
@@ -502,9 +511,11 @@ const CanvasPreview = forwardRef(function CanvasPreview(
         lastSeen = -Infinity;
         raw.current = null;
         smoothed.current = null;
+        pd.current = null;
         if (active) {
           report.current({
             tracking: 'Unavailable',
+            estimatedPD: null,
             detectorError:
               'AR unavailable. Face detection could not start. Retry detection, or upload a photo and turn off Auto Align for manual placement.',
           });
