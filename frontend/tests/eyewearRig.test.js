@@ -1,3 +1,5 @@
+import { estimateHeadShape } from '../src/components/tryon/eyewearHeadGeometry.js';
+import { measureLensApertures } from '../src/components/tryon/accessoryAssets.js';
 import { sampleLensTint } from '../src/components/tryon/lensSurface.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -107,7 +109,16 @@ test('frontal and near-frontal shafts point backward with a short tucked project
     const rig = createEyewearRig({ ...anchor, rawYawDegrees: yaw }, transform, fit);
     for (const t of rig.temples) {
       assert.ok(t.target.depth > t.hingeDepth + 0.5);
-      assert.ok(t.projectedLengthRatio < 0.06, `${yaw}: open wing ${t.projectedLengthRatio}`);
+      // A posterior endpoint can project inward behind the head. Measure actual
+      // OUTWARD extent instead of mistaking that occluded length for an open wing.
+      const extent =
+        Math.max(
+          ...Array.from(
+            { length: 65 },
+            (_, i) => (rig.project(rig.templePoint(t.side, i / 64)).x - t.hingeX) * t.side,
+          ),
+        ) / transform.width;
+      assert.ok(extent > 0.005 && extent < 0.09, `${yaw}: root/wing extent ${extent}`);
       close(t.physicalLength / rig.physicalWidth, 0.62);
     }
   }
@@ -119,7 +130,8 @@ test('moderate yaw projects near shaft toward the head side, far shaft behind le
     const [far, near] = rig.temples;
     assert.ok(near.vector.x * near.side > 0);
     assert.ok(far.vector.x * far.side < 0); // hidden by the lens/face guard
-    assert.ok(near.opacity > far.opacity);
+    assert.equal(near.opacity, 1);
+    assert.equal(far.opacity, 1); // Depth, not yaw alpha, determines visibility.
     close(near.physicalLength, far.physicalLength);
     const localNear = rig.templePoint(near.side, 1),
       localFar = rig.templePoint(far.side, 1);
@@ -176,8 +188,8 @@ test('orientation EMA filters actual degrees and pitch before every part is proj
   const old = { ...anchor, yaw: 0 },
     next = { ...old, rawYawDegrees: 30, pitchDegrees: 20, yaw: 0.3 };
   const a = smoothAnchors([old], [next], 16)[0];
-  assert.ok(a.rawYawDegrees > 0 && a.rawYawDegrees < 8);
-  assert.ok(a.pitchDegrees > 0 && a.pitchDegrees < 5);
+  assert.ok(a.rawYawDegrees > 0 && a.rawYawDegrees < 10);
+  assert.ok(a.pitchDegrees > 0 && a.pitchDegrees < 7);
   let v = [old];
   for (let i = 0; i < 30; i++) v = smoothAnchors(v, [next], 16);
   close(v[0].rawYawDegrees, 30, 0.2);
@@ -317,4 +329,134 @@ test('Aviator lens calibration stays product-asset driven and has no invented te
   assert.equal(config.leftTempleSrc, null);
   assert.equal(config.fit.lensSurface.width, 1900);
   assert.equal(config.fit.lensSurface.apertures.length, 2);
+});
+
+test('stable lateral mesh aggregates recover the same head dimensions under rigid yaw and pitch', () => {
+  for (const yaw of [-30, -15, 0, 15, 30])
+    for (const pitch of [-10, 0, 10]) {
+      const y = (yaw * Math.PI) / 180,
+        p = (pitch * Math.PI) / 180,
+        c = Math.cos,
+        s = Math.sin;
+      const surface = Array.from({ length: 468 }, () => ({ x: 0, y: 0, z: 0 }));
+      for (const [i, id] of [127, 234, 93, 356, 454, 323].entries()) {
+        const x = i < 3 ? -0.5 : 0.5,
+          py = ((i % 3) - 0.5) * 0.06,
+          z = 0.3;
+        const yy = c(p) * py - s(p) * z,
+          zz = s(p) * py + c(p) * z;
+        surface[id] = {
+          x: (c(y) * x - s(y) * zz) / c(y),
+          y: yy / c(y),
+          z: (s(y) * x + c(y) * zz) / c(y),
+        };
+      }
+      const shape = estimateHeadShape(surface, yaw, pitch);
+      close(shape.radius, 0.5);
+      close(shape.sideDepth, 0.3);
+      // One unstable lateral vertex cannot determine a temple endpoint.
+      surface[127] = { x: 10, y: 3, z: 10 };
+      const noisy = estimateHeadShape(surface, yaw, pitch);
+      close(noisy.radius, 0.5);
+      close(noisy.sideDepth, 0.3);
+    }
+  assert.equal(estimateHeadShape(null), null);
+  assert.equal(estimateHeadShape(Array(468).fill({ x: 0, y: 0, z: NaN })), null);
+});
+
+test('proximal wrap recedes in depth and fits narrow/wide heads without changing frame-relative temple length', () => {
+  for (const radius of [0.44, 0.55])
+    for (const scale of [0.6, 1, 1.6]) {
+      const t = { ...transform, width: transform.width * scale, height: transform.height * scale };
+      const rig = createEyewearRig({ ...anchor, headShape: { radius, sideDepth: 0.3 } }, t, fit);
+      for (const side of [-1, 1]) {
+        const h = rig.templePoint(side, 0),
+          p = rig.templePoint(side, fit.templeRootLength);
+        assert.ok(p.z - h.z > Math.abs(p.x - h.x));
+        close(rig.temples[0].physicalLength / t.width, 0.62);
+        assert.ok(rig.templePoint(side, 0.52).x * side > Math.abs(h.x));
+      }
+    }
+});
+
+test('real lens aperture extraction excludes exterior transparency and preserves hinge neighborhoods', () => {
+  const w = 40,
+    h = 18,
+    pixels = new Uint8ClampedArray(w * h * 4);
+  for (let y = 2; y < 16; y++) for (let x = 1; x < 39; x++) pixels[(y * w + x) * 4 + 3] = 255;
+  for (let y = 4; y < 14; y++)
+    for (const [a, b] of [
+      [4, 17],
+      [23, 36],
+    ])
+      for (let x = a; x < b; x++) pixels[(y * w + x) * 4 + 3] = 0;
+  const holes = measureLensApertures(pixels, w, h, { x: 1, y: 2, width: 38, height: 14 });
+  assert.equal(holes.length, 2);
+  assert.equal(
+    holes.reduce((n, r) => n + r.pixels.length, 0),
+    260,
+  );
+  assert.ok(holes.flatMap((r) => r.pixels).every((i) => i % w >= 4 && i % w < 36));
+  // Opening a rim to exterior disables that aperture, rather than masking roots.
+  for (let x = 1; x < 5; x++) pixels[(8 * w + x) * 4 + 3] = 0;
+  assert.equal(measureLensApertures(pixels, w, h, { x: 1, y: 2, width: 38, height: 14 }).length, 1);
+});
+
+test('three separately calibrated backend eyewear packages share one engine and retain their own assets', () => {
+  for (const [n, width, depth, curve] of [
+    [1, 0.9, 0.55, 0.045],
+    [2, 1, 0.62, 0.065],
+    [3, 1.05, 0.75, 0.08],
+  ]) {
+    const base = `/assets/products/eyewear/measured-${n}/`;
+    const profile = {
+      widthMultiplier: width,
+      templeDepth: depth,
+      templeCurve: curve,
+      templeRootLength: 0.2,
+      templeVerticalOffset: 0.02,
+      hinges: { left: { x: 0.035, y: 0.25 }, right: { x: 0.965, y: 0.25 } },
+    };
+    const product = {
+      id: 900 + n,
+      imageUrl: base + 'front.png',
+      arMetadata: {
+        frontAsset: base + 'front.png',
+        leftTempleAsset: base + 'left-temple.png',
+        rightTempleAsset: base + 'right-temple.png',
+        fitProfile: profile,
+      },
+    };
+    const resolved = sunglassesAssetFor(product, fit);
+    assert.equal(resolved.frontFrameSrc, product.imageUrl);
+    assert.equal(resolved.leftTempleSrc, product.arMetadata.leftTempleAsset);
+    assert.equal(resolved.rightTempleSrc, product.arMetadata.rightTempleAsset);
+    const t = accessoryTransform(anchor, defaultControls(), 1000, 750, 2.85, resolved.fit),
+      rig = createEyewearRig(anchor, t, resolved.fit);
+    close(rig.depth, depth);
+    close(rig.headFit.curve, curve);
+    for (const temple of rig.temples) {
+      const mesh = rigidTempleMesh(rig, temple, part(temple.side < 0 ? 'left' : 'right'));
+      assert.equal(mesh.strips.length, 16);
+      close(mesh.hinge.x, temple.hingeX);
+      close(mesh.hinge.y, temple.hingeY);
+    }
+  }
+});
+
+test('posterior head shell is finite and behind the bridge in frontal pose, and follows the same root', () => {
+  const rig = createEyewearRig(
+    { ...anchor, faceSurface: Array(468).fill({ x: 0, y: 0, z: 0 }) },
+    transform,
+    fit,
+  );
+  assert.equal(rig.headShell.length, 8 * 24 * 6);
+  assert.ok(
+    rig.headShell.every((p) => p.depth >= 0.029 && p.perspective > 0 && Number.isFinite(p.x)),
+  );
+  const mesh = rigidTempleMesh(rig, rig.temples[0], part('left'));
+  // Left hinge is at the right PHOTO edge, right hinge at its left PHOTO edge.
+  assert.ok(mesh.strips[0][0].depth > mesh.strips.at(-1)[1].depth);
+  const right = rigidTempleMesh(rig, rig.temples[1], part('right'));
+  assert.ok(right.strips[0][0].depth < right.strips.at(-1)[1].depth);
 });

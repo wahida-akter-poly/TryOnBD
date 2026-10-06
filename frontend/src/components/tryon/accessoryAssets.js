@@ -123,6 +123,89 @@ function inspectTemple(part, left) {
   };
 }
 
+// Enclosed lens apertures measured from the actual front photograph. Exterior
+// transparency is flood-filled away, so this mask cannot clip hinge/temple roots.
+// Extract once on asset load; no per-frame pixel scan or product-specific stencil.
+export function measureLensApertures(pixels, width, height, bounds) {
+  const seen = new Uint8Array(width * height),
+    queue = new Int32Array(width * height);
+  const open = (i) => pixels[i * 4 + 3] < 160;
+  const fill = (start, collect = false) => {
+    let head = 0,
+      tail = 0;
+    queue[tail++] = start;
+    seen[start] = 1;
+    while (head < tail) {
+      const i = queue[head++],
+        x = i % width,
+        y = Math.floor(i / width);
+      for (const n of [
+        x > 0 ? i - 1 : -1,
+        x + 1 < width ? i + 1 : -1,
+        y > 0 ? i - width : -1,
+        y + 1 < height ? i + width : -1,
+      ])
+        if (n >= 0 && !seen[n] && open(n)) {
+          seen[n] = 1;
+          queue[tail++] = n;
+        }
+    }
+    return collect ? Array.from(queue.subarray(0, tail)) : null;
+  };
+  for (let x = 0; x < width; x++)
+    for (const i of [x, (height - 1) * width + x]) if (!seen[i] && open(i)) fill(i);
+  for (let y = 0; y < height; y++)
+    for (const i of [y * width, y * width + width - 1]) if (!seen[i] && open(i)) fill(i);
+  const regions = [];
+  for (let i = 0; i < seen.length; i++)
+    if (!seen[i] && open(i)) {
+      const region = fill(i, true);
+      if (region.length > bounds.width * bounds.height * 0.015) regions.push(region);
+    }
+  return regions
+    .sort((a, b) => b.length - a.length)
+    .slice(0, 2)
+    .map((region) => {
+      const rows = new Map();
+      for (const i of region) {
+        const y = Math.floor(i / width),
+          x = i % width,
+          r = rows.get(y) ?? [x, x];
+        rows.set(y, [Math.min(r[0], x), Math.max(r[1], x)]);
+      }
+      const entries = [...rows].sort((a, b) => a[0] - b[0]);
+      const point = (x, y) => ({
+        x: (x - bounds.x) / bounds.width,
+        y: (y - bounds.y) / bounds.height,
+      });
+      return {
+        pixels: region,
+        outline: [
+          ...entries.map(([y, r]) => point(r[0], y)),
+          ...entries.reverse().map(([y, r]) => point(r[1] + 1, y + 1)),
+        ],
+      };
+    });
+}
+function lensOccluder(front) {
+  const canvas = document.createElement('canvas');
+  canvas.width = front.image.naturalWidth;
+  canvas.height = front.image.naturalHeight;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(front.image, 0, 0);
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height),
+    regions = measureLensApertures(data.data, canvas.width, canvas.height, front.bounds);
+  if (!regions.length) return { lensOccluder: null, lensOutlines: [] };
+  data.data.fill(0);
+  for (const region of regions)
+    for (const i of region.pixels) data.data.set([255, 255, 255, 255], i * 4);
+  ctx.putImageData(data, 0, 0);
+  return {
+    lensOccluder: { image: canvas, bounds: front.bounds },
+    lensOutlines: regions.map((r) => r.outline),
+  };
+}
+
 export async function loadGlassesAssembly(frontFrameSrc, leftTempleSrc, rightTempleSrc) {
   const [front, leftTemple, rightTemple] = await Promise.all([
     loadAccessoryAsset(frontFrameSrc, null, true),
@@ -131,6 +214,7 @@ export async function loadGlassesAssembly(frontFrameSrc, leftTempleSrc, rightTem
   ]);
   return {
     ...front,
+    ...lensOccluder(front),
     leftTemple: inspectTemple(leftTemple, true),
     rightTemple: inspectTemple(rightTemple, false),
   };

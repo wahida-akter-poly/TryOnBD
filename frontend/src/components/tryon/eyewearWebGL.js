@@ -21,21 +21,14 @@ const fragmentSource = `
 precision mediump float;
 uniform sampler2D u_texture;
 uniform float u_alpha;
-uniform float u_side;
-uniform float u_hinge;
 uniform bool u_depthOnly;
-uniform vec2 u_origin;
-uniform vec2 u_roll;
-uniform float u_height;
+uniform bool u_aperture;
 varying vec2 v_uv;
 void main() {
-  if (u_depthOnly) { gl_FragColor = vec4(0.0); return; }
-  vec2 pixel = vec2(gl_FragCoord.x, u_height - gl_FragCoord.y) - u_origin;
-  float localX = dot(pixel, u_roll);
-  if (u_side != 0.0 && (localX - u_hinge) * u_side < 0.0) discard;
+  if (u_depthOnly && !u_aperture) { gl_FragColor = vec4(0.0); return; }
   vec4 color = texture2D(u_texture, v_uv);
   if (color.a < 0.01) discard;
-  gl_FragColor = color * u_alpha;
+  gl_FragColor = u_depthOnly ? vec4(0.0) : color * u_alpha;
 }
 `;
 
@@ -91,7 +84,7 @@ function createRenderer(canvas) {
       gl.getAttribLocation(program, `a_${name}`),
     );
     renderer.uniforms = Object.fromEntries(
-      ['texture', 'alpha', 'side', 'hinge', 'depthOnly', 'origin', 'roll', 'height'].map((name) => [
+      ['texture', 'alpha', 'depthOnly', 'aperture'].map((name) => [
         name,
         gl.getUniformLocation(program, `u_${name}`),
       ]),
@@ -132,7 +125,12 @@ function vertex(point, uv, rig, transform, width, height) {
     w = 1 / (point.perspective ?? 1);
   // Homogeneous w preserves perspective-correct UV interpolation in WebGL.
   // Depth is measured relative to the nose bridge in object-width units.
-  const z = ((point.depth + 2) / 5) * 2 - 1;
+  // Actual pinhole near/far depth: (A*z+B)/(distance+z). Both observed
+  // face vertices and projected product vertices use this same camera space.
+  const near = rig.distance - 2,
+    far = rig.distance + 3;
+  const cameraZ = rig.distance + point.depth;
+  const z = (far + near) / (far - near) - (2 * far * near) / ((far - near) * cameraZ);
   return [((p.x / width) * 2 - 1) * w, (1 - (p.y / height) * 2) * w, z * w, w, uv.x, uv.y, point.x];
 }
 
@@ -214,32 +212,59 @@ export function renderEyewearWebGL(ctx, asset, anchor, transform, rig, meshes) {
     gl.activeTexture(gl.TEXTURE0);
     // A complete texture is required by WebGL even for the depth-only branch.
     gl.bindTexture(gl.TEXTURE_2D, textureFor(renderer, asset.image));
+    gl.uniform1i(uniforms.aperture, 0);
     const face = faceVertices(anchor, rig, transform, width, height);
     if (face) {
       gl.colorMask(false, false, false, false);
       gl.uniform1i(uniforms.depthOnly, 1);
+      // The posterior head closes the open face surface; both write real depth.
+      const shell = new Float32Array(
+        rig.headShell.flatMap((p) => vertex(p, { x: 0, y: 0 }, rig, transform, width, height)),
+      );
+      gl.bufferData(gl.ARRAY_BUFFER, shell, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, shell.length / 7);
       gl.bufferData(gl.ARRAY_BUFFER, face, gl.DYNAMIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, face.length / 7);
-      gl.colorMask(true, true, true, true);
     }
+    if (asset.lensOccluder) {
+      gl.colorMask(false, false, false, false);
+      gl.uniform1i(uniforms.depthOnly, 1);
+      gl.uniform1i(uniforms.aperture, 1);
+      gl.bindTexture(gl.TEXTURE_2D, textureFor(renderer, asset.lensOccluder.image));
+      const aperture = planeVertices(
+        rig.front.mesh,
+        asset.lensOccluder,
+        rig,
+        transform,
+        width,
+        height,
+      );
+      gl.bufferData(gl.ARRAY_BUFFER, aperture, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, aperture.length / 7);
+    }
+    gl.colorMask(true, true, true, true);
     gl.uniform1i(uniforms.depthOnly, 0);
-    gl.uniform2f(uniforms.origin, transform.x, transform.y);
-    gl.uniform2f(uniforms.roll, Math.cos(transform.angle), Math.sin(transform.angle));
-    gl.uniform1f(uniforms.height, height);
+    gl.uniform1i(uniforms.aperture, 0);
+    // Translucent photographs test against opaque face/head/lens depth but do
+    // not write it: antialiased/clear texels cannot mask another product surface.
+    gl.depthMask(false);
     gl.activeTexture(gl.TEXTURE0);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    const usedImages = new Set([asset.image, asset.leftTemple?.image, asset.rightTemple?.image]);
+    const usedImages = new Set([
+      asset.image,
+      asset.lensOccluder?.image,
+      asset.leftTemple?.image,
+      asset.rightTemple?.image,
+    ]);
     for (const [image, texture] of renderer.textures)
       if (!usedImages.has(image)) {
         gl.deleteTexture(texture);
         renderer.textures.delete(image);
       }
-    const draw = (mesh, part, alpha, side = 0, hinge = 0) => {
+    const draw = (mesh, part, alpha) => {
       gl.bindTexture(gl.TEXTURE_2D, textureFor(renderer, part.image));
       gl.uniform1f(uniforms.alpha, alpha);
-      gl.uniform1f(uniforms.side, side);
-      gl.uniform1f(uniforms.hinge, hinge);
       const data = planeVertices(mesh, part, rig, transform, width, height);
       gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, data.length / 7);
@@ -247,17 +272,10 @@ export function renderEyewearWebGL(ctx, asset, anchor, transform, rig, meshes) {
     for (const temple of rig.temples) {
       const part = temple.side < 0 ? asset.leftTemple : asset.rightTemple;
       if (part && temple.opacity > 0)
-        draw(
-          meshes.get(temple.side),
-          part,
-          transform.opacity * temple.opacity,
-          temple.side,
-          temple.hingeX,
-        );
+        draw(meshes.get(temple.side), part, transform.opacity * temple.opacity);
     }
-    // The frame sits in front of the nose; clear-lens alpha cannot reveal a
-    // temple because the rear planes were independently guarded at the hinges.
-    gl.disable(gl.DEPTH_TEST);
+    // The front uses the same real depth test as the temples. LEQUAL allows
+    // coplanar aperture/rim edges; no product part bypasses face/head depth.
     gl.depthMask(false);
     draw(rig.front.mesh, asset, transform.opacity);
     if (gl.isContextLost()) return false;

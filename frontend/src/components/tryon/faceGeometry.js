@@ -1,3 +1,4 @@
+import { estimateHeadShape } from './eyewearHeadGeometry.js';
 import { createEyewearRig, drawEyewearRig, rigidTempleMesh } from './eyewearRig.js';
 import { fallbackYawDegrees, normalizeYawDegrees } from './headPose.js';
 import { faceToCanvas } from './earTracking.js';
@@ -68,9 +69,28 @@ export function smoothAnchors(previous, next, elapsedMs) {
     const rollAlpha = anchor.bridgeLocked
       ? 1 - Math.exp(-Math.max(0, elapsedMs) / trackingConfig.rollSmoothingMs)
       : alpha;
-    const yawAlpha = 1 - Math.exp(-Math.max(0, elapsedMs) / trackingConfig.yawSmoothingMs);
+    const turn = Math.min(
+      1,
+      Math.max(
+        Math.abs((anchor.rawYawDegrees ?? 0) - (old.rawYawDegrees ?? 0)),
+        Math.abs((anchor.pitchDegrees ?? 0) - (old.pitchDegrees ?? 0)),
+      ) / 20,
+    );
+    const yawAlpha =
+      1 - Math.exp(-Math.max(0, elapsedMs) / (trackingConfig.yawSmoothingMs - 45 * turn));
     return {
       ...anchor,
+      ...(anchor.headShape
+        ? {
+            headShape: Object.fromEntries(
+              Object.entries(anchor.headShape).map(([key, value]) => [
+                key,
+                (old.headShape?.[key] ?? value) +
+                  yawAlpha * (value - (old.headShape?.[key] ?? value)),
+              ]),
+            ),
+          }
+        : {}),
       x: old.x + positionAlpha * (anchor.x - old.x),
       y: old.y + positionAlpha * (anchor.y - old.y),
       width: old.width + scaleAlpha * (anchor.width - old.width),
@@ -155,6 +175,12 @@ export function faceAnchors(landmarks, width, height, kind, headPose) {
     const sideCenter = (templeSides[0].x + templeSides[1].x) / 2;
     const rawYaw = nose.x - sideCenter;
     const yaw = normalizeYaw(rawYaw);
+    const faceSurface = Number.isFinite(landmarks[6].z)
+      ? landmarks.slice(0, 468).map((p) => ({
+          ...local({ x: p.x * width, y: p.y * height }),
+          z: ((p.z - landmarks[6].z) * width) / faceWidth,
+        }))
+      : null;
     return [
       {
         ...bridge,
@@ -175,12 +201,12 @@ export function faceAnchors(landmarks, width, height, kind, headPose) {
         rawYaw,
         templeSides,
         ...extractHeadSides(landmarks, width, height, bridge, angle, faceWidth),
-        faceSurface: Number.isFinite(landmarks[6].z)
-          ? landmarks.slice(0, 468).map((p) => ({
-              ...local({ x: p.x * width, y: p.y * height }),
-              z: ((p.z - landmarks[6].z) * width) / faceWidth,
-            }))
-          : null,
+        faceSurface,
+        headShape: estimateHeadShape(
+          faceSurface,
+          headPose?.rawYawDegrees ?? fallbackYawDegrees(rawYaw),
+          headPose?.pitchDegrees ?? 0,
+        ),
         ...(headPose || {}),
       },
     ];
@@ -370,18 +396,16 @@ export function frontFrameGeometry(anchor, transform, fit = {}) {
 
 export function eyewearDebugGeometry(asset, anchor, controls, width, height, fit) {
   if (!asset || !anchor) return null;
-  const front = frontFrameGeometry(
+  const transform = accessoryTransform(
     anchor,
-    accessoryTransform(
-      anchor,
-      controls,
-      width,
-      height,
-      asset.bounds.width / asset.bounds.height,
-      fit,
-    ),
+    controls,
+    width,
+    height,
+    asset.bounds.width / asset.bounds.height,
     fit,
   );
+  const rig = createEyewearRig(anchor, transform, fit),
+    front = rig.front;
   return {
     detectedBridge: anchor.noseBridge,
     renderedBridge: front.bridge,
@@ -397,31 +421,14 @@ export function eyewearDebugGeometry(asset, anchor, controls, width, height, fit
     pitchDegrees: anchor.pitchDegrees ?? 0,
     rollRadians: anchor.angle,
     frontScale: front.frontScale,
+    headFit: rig.headFit,
+    headLocalPaths: rig.paths,
     temples:
       asset.leftTemple && asset.rightTemple
-        ? glassesTemples(
-            anchor,
-            accessoryTransform(
-              anchor,
-              controls,
-              width,
-              height,
-              asset.bounds.width / asset.bounds.height,
-              fit,
-            ),
-            fit,
-            asset,
-          ).map((temple) => {
+        ? rig.temples.map((temple) => {
             const part = temple.side < 0 ? asset.leftTemple : asset.rightTemple;
             const destination = templeDrawGeometry(temple, part);
-            const transform = accessoryTransform(
-              anchor,
-              controls,
-              width,
-              height,
-              asset.bounds.width / asset.bounds.height,
-              fit,
-            );
+            temple = { ...temple, mesh: rigidTempleMesh(rig, temple, part) };
             const quad = temple.mesh ?? templeQuad(temple, part, transform);
             const screen = (p) => ({
               x: transform.x + p.x * Math.cos(transform.angle) - p.y * Math.sin(transform.angle),
@@ -433,6 +440,9 @@ export function eyewearDebugGeometry(asset, anchor, controls, width, height, fit
               quad,
               screenQuad: quad.corners.map(screen),
               screenTarget: screen(temple.target),
+              screenCenterline: Array.from({ length: 17 }, (_, i) =>
+                screen(rig.project(rig.templePoint(temple.side, i / 16))),
+              ),
               screenHinge: screen({ x: temple.hingeX, y: temple.hingeY }),
               screenAssetHinge: screen({ x: temple.hingeX, y: temple.hingeY }),
               assetHingePivot: part.hingePivot,

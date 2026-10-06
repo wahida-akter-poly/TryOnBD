@@ -10,7 +10,8 @@ const radians = (v) => (v * Math.PI) / 180;
 export const eyewearRigConfig = Object.freeze({
   templeDepth: 0.62,
   templeSplay: 0.04,
-  hingeBend: 0.018,
+  templeCurve: 0.065,
+  templeRootLength: 0.18,
   templeDrop: 0.012,
   maxYawDegrees: 65,
   maxPitchDegrees: 40,
@@ -70,16 +71,64 @@ export function createEyewearRig(anchor, transform, fit = {}) {
   const hinges = localHinges.map(project);
   const depth = clamp(fit.templeDepth ?? eyewearRigConfig.templeDepth, 0.4, 0.85);
   const splay = clamp(fit.templeSplay ?? eyewearRigConfig.templeSplay, 0.02, 0.08);
-  // Fixed hinge bend followed by a posterior shaft. This shape never opens,
-  // flaps or changes length with pose. The photographed hook supplies its detail.
+  // Shared, filtered head dimensions in object-width units. The facial oval
+  // estimates the skull side, not a literal ear. Posterior targets are geometric.
+  const faceToFrame = 1 / (fit.widthMultiplier ?? 0.92);
+  const radius = clamp((anchor.headShape?.radius ?? 0.49) * faceToFrame, 0.46, 0.64);
+  const sideDepth = clamp((anchor.headShape?.sideDepth ?? 0.25) * faceToFrame, 0.15, 0.45);
+  const curve = clamp(fit.templeCurve ?? eyewearRigConfig.templeCurve, 0.02, 0.12);
+  const rootLength = clamp(fit.templeRootLength ?? eyewearRigConfig.templeRootLength, 0.08, 0.3);
+  const drop = clamp(fit.templeVerticalOffset ?? eyewearRigConfig.templeDrop, -0.08, 0.08);
+  const sideProgress = clamp(sideDepth / depth, 0.4, 0.75);
+  // Three cubic segments: hinge wrap, side shaft, posterior/ear-direction end.
+  // Length and curvature live in HEAD coordinates and never change with yaw.
+  const paths = localHinges.map((h, i) => {
+    const side = i ? 1 : -1,
+      rootX = Math.abs(h.x) + curve * 0.45;
+    return [
+      h,
+      { x: side * rootX, y: h.y, z: depth * rootLength },
+      { x: side * (radius + splay), y: h.y + drop * 0.45, z: depth * sideProgress },
+      { x: side * (radius - curve * 1.4), y: h.y + drop, z: depth },
+    ];
+  });
   const templePoint = (side, u, v = 0) => {
-    const h = localHinges[side < 0 ? 0 : 1];
-    return {
-      x: h.x + side * (eyewearRigConfig.hingeBend * Math.min(Math.max(u, 0) / 0.07, 1) + splay * u),
-      y: h.y + eyewearRigConfig.templeDrop * u + depth * v,
-      z: depth * u,
-    };
+    const path = paths[side < 0 ? 0 : 1],
+      t = clamp(u, 0, 1);
+    const knots = [0, rootLength, sideProgress, 1];
+    let k = t < knots[1] ? 0 : t < knots[2] ? 1 : 2;
+    const a = path[k],
+      b = path[k + 1],
+      f = (t - knots[k]) / (knots[k + 1] - knots[k]);
+    // Smoothstep for the outward wrap; straight posterior depth avoids a hinge
+    // flare and gives the textured ribbon a finite, curved frontal projection.
+    const blend = f * f * (3 - 2 * f);
+    return { x: a.x + (b.x - a.x) * blend, y: a.y + (b.y - a.y) * blend + depth * v, z: depth * u };
   };
+  // A low-poly posterior skull closes the open facial mesh. Its anterior extent
+  // stays BEHIND the bridge. It hides far stems through the side/back of the head.
+  const headShell = [];
+  const rings = 8,
+    sectors = 24,
+    rz = Math.max(0.25, sideDepth - 0.03),
+    centerZ = rz + 0.03;
+  const shellPoint = (i, j) => {
+    const latitude = -Math.PI / 2 + (Math.PI * i) / rings,
+      longitude = (2 * Math.PI * j) / sectors;
+    return project({
+      x: radius * Math.cos(latitude) * Math.cos(longitude),
+      y: 0.28 + 0.72 * Math.sin(latitude),
+      z: centerZ + rz * Math.cos(latitude) * Math.sin(longitude),
+    });
+  };
+  for (let i = 0; i < rings; i++)
+    for (let j = 0; j < sectors; j++) {
+      const a = shellPoint(i, j),
+        b = shellPoint(i, j + 1),
+        c = shellPoint(i + 1, j + 1),
+        d = shellPoint(i + 1, j);
+      headShell.push(a, b, c, a, c, d);
+    }
   const frontMesh = textureMesh((u, v) => project(frontPoint(u, v)));
   const corners = [
     project(frontPoint(0, 0)),
@@ -108,9 +157,8 @@ export function createEyewearRig(anchor, transform, fit = {}) {
       target = project(templePoint(side, 1));
     const vector = { x: target.x - hinge.x, y: target.y - hinge.y };
     const near = side === nearSide;
-    // Far geometry is already directed behind the face; alpha only softens the
-    // occlusion edge. There is no independent length/angle filter per temple.
-    const opacity = near ? 1 : clamp(1 - Math.abs(degrees) / 38, 0, 1);
+    // Visibility comes from geometry and the depth buffer, never yaw fading.
+    const opacity = 1;
     const length = Math.hypot(vector.x, vector.y);
     return {
       side,
@@ -144,6 +192,9 @@ export function createEyewearRig(anchor, transform, fit = {}) {
     screen,
     templePoint,
     depth,
+    headShell: anchor.faceSurface ? headShell : [],
+    headFit: { radius, sideDepth, curve, rootLength, drop },
+    paths,
   };
 }
 
@@ -204,19 +255,30 @@ export function drawEyewearRig(ctx, asset, anchor, transform, fit = {}) {
     const part = temple.side < 0 ? asset.leftTemple : asset.rightTemple;
     if (!part || temple.opacity <= 0) continue;
     ctx.save();
-    // Lens guard in assembly coordinates, including transparent clear lenses.
-    // Both rear planes are painted before the front. No lens alpha can reveal
-    // a ghost temple, and a far arm pointing inward is naturally hidden.
-    ctx.beginPath();
-    ctx.rect(
-      temple.side < 0 ? temple.hingeX - transform.width * 3 : temple.hingeX,
-      -transform.height * 4,
-      transform.width * 3,
-      transform.height * 8,
-    );
-    ctx.clip();
-    // Conservative fallback: a far plane is behind the head, while the near
-    // plane can lie on its visible side. A binary mask cannot depth-test that.
+    // Canvas cannot depth-test. Keep the same fitted strip, use the actual head
+    // contour for the far shaft, and protect only the measured lens apertures.
+    if (asset.lensOutlines?.length) {
+      ctx.beginPath();
+      ctx.rect(
+        -transform.width * 3,
+        -transform.height * 4,
+        transform.width * 6,
+        transform.height * 8,
+      );
+      for (const outline of asset.lensOutlines) {
+        outline.forEach((p, i) => {
+          const q = rig.project({
+            x: p.x - rig.front.pivotX,
+            y: ((p.y - rig.front.pivotY) * transform.height) / transform.width,
+            z: 0,
+          });
+          if (i === 0) ctx.moveTo(q.x, q.y);
+          else ctx.lineTo(q.x, q.y);
+        });
+        ctx.closePath();
+      }
+      ctx.clip('evenodd');
+    }
     if (!temple.near) clipOutsideHead(ctx, contour, transform.width * 8, transform.height * 10);
     ctx.globalAlpha = transform.opacity * temple.opacity;
     drawTempleQuad(ctx, part, meshes.get(temple.side));

@@ -1,34 +1,72 @@
-# Eyewear fitting and production verification
+# Eyewear temple fitting and camera acceptance
 
-Worktree: `E:\AOOP\TryOnBD-PRODUCTION`, branch `feature/backend-driven-production-ui`.
+Worktree: `E:\AOOP\TryOnBD-PRODUCTION`.
+Branch: `feature/eyewear-temple-3d-fix`.
 
-## Pipeline
+## What was wrong
 
-The front and available real temple photographs are one rigid object in head-local 3D coordinates. WebGL renders their textured surfaces with perspective-correct interpolation and a depth buffer. This is **3D projection of photographed planes**, not a volumetric CAD/GLTF model. There is no Three.js dependency or duplicate face detector.
+Modern Clear's genuine temple PNGs load successfully. Each normalized side image is 1014 x 169, with 53,924 visible pixels, 49,831 opaque pixels and mean visible alpha 0.9533. No artwork or image paths were replaced.
 
-1. The existing shared Face Landmarker returns landmarks and its column-major 4x4 canonical-to-detected-face matrix. Validate the affine matrix, uniform scale, orthogonal axes and handedness; extract yaw, pitch and roll. Convert the y-up/z-toward convention to the screen/camera convention. Mirror yaw and roll once for selfie video.
-2. Nose-root landmarks 6/168 retain the bridge anchor. Eye corners 33/133/362/263 provide a fallback eye-line roll; face sides 234/454 determine scale. Recover object width from the already foreshortened face span before projecting. Product fit and user size/height controls remain independent.
-3. Fixed front-plane hinge coordinates and two fixed posterior temple paths share one rotation and pinhole projection. A small fixed hinge bend makes the stems tuck behind the frame frontally. No yaw-dependent opening angle, independent arm-length filter or per-arm swinging remains.
-4. The existing 468 face-surface landmarks and MediaPipe's 852 tessellation triangles form a depth-only occluder. Compare rear-plane depth against the observed face instead of erasing everything inside its outline. Both temples have a strict hinge/lens pixel guard and render before the front. Transparent clear lenses cannot reveal rear-arm ghosts.
-5. Perspective-correct textures use the existing alpha-measured hinge pivots, preserving photographed shafts and hooks. Premultiplied alpha avoids dark halos. The same composite canvas supplies preview, immutable camera capture and PNG download.
+The previous shader discarded every temple fragment projected inward from its hinge. A backward shaft naturally projects inward with perspective, so the screen-space half-plane rule removed legitimate root/shaft pixels before depth could decide visibility. The old fixed shallow splay did not estimate the head-side cross-section. Frontal browser checks accepted just 70/74 temple pixels and checked no minimum root visibility. Far-side opacity also dropped to 0.21 at 30 degrees, hiding fitting errors. The old controlled tests turned the glasses over an unchanged frontal face mesh.
 
-Matrix yaw/pitch use a 90 ms EMA; roll/size retain the existing 40 ms filters and the bridge its responsive 8-18 ms filter. All axes share the 180 ms spike/invalid-pose hold and bounded recovery. Sustained turns do not repeatedly restart the hold. Lost faces retain the existing 150 ms grace and 120 ms fade. Landmark orientation is the matrix fallback. WebGL/context failures use the same projected rig through Canvas, with conservative far-side head masking and the same lens guard. GPU textures, buffers and shaders are released on unmount; unused textures are pruned on asset changes. Preview retains its existing 1280-pixel maximum dimension.
+## Current geometry and tracking
 
-The matrix output is documented in the [official Face Landmarker guide](https://developers.google.com/edge/mediapipe/solutions/vision/face_landmarker). Matrix conventions follow the [official matrix format](https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/framework/formats/matrix_data.proto). Depth uses relative Face Landmarker z measurements; it is an approximation rather than measured physical millimetres.
+This is WebGL 3D projection of genuine photographed surfaces, with curved textured ribbons and a depth buffer. It is not a volumetric manufacturer CAD/GLTF model.
 
-## Real product assets and backend integration
+- The shared Face Landmarker remains the only detector in normal eyewear use. Its validated column-major transformation matrix supplies yaw, pitch and roll. Selfie mirroring is applied once. Existing matrix spike handling and landmark-only orientation fallback remain.
+- Nose-root landmarks 6/168 anchor the bridge; eye corners 33/133/362/263 provide fallback eye-line roll. Face sides 234/454 determine scale. The existing recovery of physical width from foreshortened face width is preserved.
+- Lateral oval groups 127/234/93 and 356/454/323 are transformed back into head-local axes. Robust aggregates estimate lateral radius and depth. These are skull-side proxies, not literal ear landmarks. Invalid mesh dimensions use conservative shared defaults.
+- Each temple has four control points: its exact frame hinge, a short proximal wrap, a side-head cross-section, and a posterior/ear-direction target. Three cubic lateral segments recede monotonically in depth. Sixteen textured strips preserve the supplied shaft and ear-hook photography. The proximal movement is predominantly backward, rather than a lateral open wing.
+- Front, hinges, both ribbons and the posterior head proxy use the same root rotation, translation, scale and pinhole camera. Hinge positions come from the front plane itself. The measured alpha-weighted hinge of each PNG maps exactly to that position. The left photograph has its hinge at its right edge; the right photograph has its hinge at its left edge. No sprite flipping or independent temple rotation is introduced.
+- Both temples retain their original texture alpha and equal assembly opacity. Frontal visibility comes from the short fitted wrap. Yaw exposes the near shaft while real depth increasingly hides the far shaft. There is no per-side yaw fade or forced-visibility override.
+- Root orientation and aggregated head dimensions share a frame-rate-independent EMA: 90 ms at rest, approaching 45 ms for larger turns. Existing bridge/width/roll filters remain. Temples have no separate lagging filter. Existing 150 ms tracking-loss hold and 120 ms fade remain coherent across the assembly.
 
-`eyewearAssetManifests` in `frontend/src/data/faceAccessories.js` maps real front-image paths to optional real left/right parts, hinge/bridge pivots, depth, splay and lens calibration. The selected backend `imageUrl` always supplies the front. Local cache query strings retain calibration; database IDs never select geometry. Unknown images use their own front, without substitute temple photographs.
+## Depth and transparency
 
-Modern Clear reuses its three existing, unmodified PNGs. Classic Aviator reuses its existing front PNG. Its original photo contains rear arms visible through both lenses; a calibrated, once-per-load lens material removes those baked shapes from the AR texture. Apertures follow the real inner rims; median colour samples come from unobstructed pixels of that same photo. Original rims/hinges and nose-pad hardware remain. Lens opacity is an AR calibration, not a measured optical specification. The original PNG and catalog thumbnail are unchanged. No fake product image, generated temple, product row or image URL was added.
+1. The observed 468-vertex facial mesh writes opaque depth only. A lightweight 8 x 24 posterior ellipsoid closes the open facial mesh at the sides/back. Its width/depth are derived from the same head estimate; its frontal extent remains behind the bridge in frontal pose. This is an anatomical approximation, without ear/hair segmentation.
+2. Enclosed lens openings are measured once from the actual front PNG alpha. Exterior transparency is flood-filled away. Only those openings write an additional front-plane depth mask, so incomplete eye tessellation cannot reveal a temple through a clear lens. Hinge/root neighborhoods are not part of this mask.
+3. Far and near photographic ribbons render against that depth, followed by the real front. All product surfaces retain depth testing (`LEQUAL`). No front-frame depth bypass remains. Homogeneous projection and camera near/far depth are consistent across product and occluder surfaces.
+4. Textures upload with premultiplied alpha and blend with `ONE, ONE_MINUS_SRC_ALPHA`. The existing 0.01 alpha discard remains. Transparent product surfaces do not write depth: faint/antialiased texels cannot block another product surface. Opaque occluders write depth normally.
 
-For another eyewear product, supply a real transparent frontal PNG, preferably with lens apertures free of background/rear-arm photographs. Optional real left/right side-view temple PNGs must include their hinge ends and ear hooks, with intact alpha and no canvas clipping. Register matching bridge/hinge coordinates and part paths in the manifest. A front-only asset is supported; fully turning stems require that product's actual parts. No component per product or database entity is needed. Existing seller/admin product create/update continues to accept `imageUrl` and controlled `arType` through the API.
+The Canvas fallback reuses the same projected ribbons and measured lens outlines, with conservative far-side head-contour clipping. It supports photo/video and export but cannot provide WebGL's per-pixel 3D head occlusion.
 
-`arType` still drives EYEWEAR/SUNGLASSES, SHIRT/TSHIRT/CLOTHING, and NECKLACE/JEWELRY routing. Shirt/necklace implementation files, PostgreSQL entities, JWT rules, account flows and backend product values were preserved. Diagnostics require `?arDebug=1` on an eyewear product and use the normal production studio. No debug controls bypass the lens guards or force arms open.
+## Modern Clear calibration
 
-## Acceptance and evidence
+Coordinates refer to visible front alpha bounds; dimensions refer to recovered physical frame width.
 
-Commands:
+```json
+{
+  "widthMultiplier": 0.92,
+  "bridgePivot": { "x": 0.5, "y": 0.43 },
+  "hinges": {
+    "left": { "x": 0.025, "y": 0.22 },
+    "right": { "x": 0.975, "y": 0.22 }
+  },
+  "templeDepth": 0.62,
+  "templeSplay": 0.025,
+  "templeCurve": 0.065,
+  "templeRootLength": 0.18,
+  "templeVerticalOffset": 0.012
+}
+```
+
+Modern Clear retains its existing real asset URLs:
+
+- `/assets/face-ar/sunglasses/modern-clear-front-clean.png`
+- `/assets/face-ar/sunglasses/modern-clear-left-temple-normalized.png`
+- `/assets/face-ar/sunglasses/modern-clear-right-temple-normalized.png`
+
+The legacy manifest is keyed by front URL, never database ID. Camera distance remains automatically estimated unless a supported fit override is supplied.
+
+## Two future eyewear packages
+
+Both new products use exactly the same renderer. Create `frontend/public/assets/products/eyewear/<slug>/`, provide `front.png`, `left-temple.png`, `right-temple.png` and the existing business `product.json`, then run `npm run sync:products` from `frontend`. See [PRODUCT_ASSET_GUIDE.md](PRODUCT_ASSET_GUIDE.md) for business fields, seller ownership and safe idempotent sync.
+
+Add the measured fitting object above under `fitProfile`, adjusting it for the genuine product. All fields are optional; shared defaults exist. Backend validation now also accepts `templeCurve` (0.02-0.12), `templeRootLength` (0.08-0.30) and `templeVerticalOffset` (-0.08..0.08). Existing `templeDepth`, `templeSplay`, bridge, hinge, width and camera fields are preserved. Metadata stays in the existing product JSON field: no entity/table/schema expansion or second importer.
+
+Supply transparent PNGs with intact alpha, no baked background or rear-arm reflections in the lens openings, and no clipped hinge/ear hook. Side cutouts should be horizontal, showing the actual outside photographic material. For the renderer's left asset, the hinge is on the image's right; for its right asset, the hinge is on the image's left. Empty or incorrect side images cannot be replaced with another product's arms. Classic Aviator remains browsable and unavailable for AR because it lacks genuine complete temples.
+
+## Automated and visual evidence
 
 ```powershell
 Set-Location E:\AOOP\TryOnBD-PRODUCTION\backend
@@ -40,28 +78,40 @@ npm run test:production
 npm run test:live
 ```
 
-- Backend: 18 passing isolated H2 tests; existing test task was up to date. JWT/role/ownership/persistence regression checks remain intact. No backend implementation changes.
-- Frontend: 143 passing unit tests, including rigid hinges, frontal projection, near/far direction, pitch/yaw/roll, mirroring, scale/fit controls, pose spikes/recovery, EMA, fallback, real lens sampling, multiple products, original asset hashes, shirt and necklace regressions.
-- Production browser: 23 tests covering API routing, auth/role/cart/seller flows, necklace photo/camera, WebGL face depth, lens ghosts, production eyewear photo/export/debug gating, Canvas fallback and simulated mirrored camera capture/stream release.
-- Live browser: 2 read-only tests against PostgreSQL-backed API data. GET products 1/2/3/4 by ID and fetch each actual image. Catalog/details/Try Virtually/photo/download succeed for both real eyewear products, the real shirt and Silver Diamond Necklace. Protected endpoints return 401 to guests. No live data was written.
-- Build: Vite production build succeeds. `git diff --check` passes.
+Resumption verification: 156 frontend unit tests, 32 production browser tests and 3 read-only live browser tests pass. The Vite production build succeeds. Gradle reports the backend tests up to date; the existing XML reports contain 41 passing tests with zero failures/errors. Changed-file formatting and `git diff --check` pass.
 
-Pixel acceptance uses real existing PNGs and real detected face landmarks, with controlled matrices at 0, -15, +15, -30 and +30 degrees. Results: zero hinge error, zero temple pixels inside lenses, about 1.5% frontal wing extent, visible near shafts, reduced/hidden far shafts, and an actual face-depth reduction relative to rendering without the mesh. These are controlled renderer fixtures on a portrait, **not photographs of physical head turns**. Simulated camera tests exercise video mode, selfie mirroring, capture and teardown; a physical webcam and a varied-person turning video remain untested.
+Checks include rigid hinge attachment under yaw/pitch/roll/scale, coherent narrow/wide head fitting, handed texture mapping, original asset hashes, robust head-side estimates, smoothing/loss behavior, real lens aperture extraction and three independently calibrated package manifests. Backend tests persist the new eyewear metadata through the existing idempotent sync and reject unsafe calibration.
 
-Ignored local artifacts in `frontend/artifacts/` include:
+The eight deterministic visual fixtures use a real detected portrait mesh. The face photograph is projected onto its posed triangles and both observed head geometry and eyewear turn together. They are controlled projections, **not photographs of real head turns**. Temple-only rendering isolates the genuine side textures for alpha/visibility measurements. A separate render without lens masking tests actual head-depth suppression, and a render without head occlusion provides the visibility denominator. Tests also protect front-frame coverage and test photo export, explicit debug gating, Canvas fallback and simulated mirrored video capture/teardown. Live tests use the existing PostgreSQL-backed products without writing catalog/cart/account data.
 
-- `eyewear-rigid-frontal.png`, `eyewear-rigid-left.png`, `eyewear-rigid-right.png`: controlled yaw projection.
-- `eyewear-production-frontal.png`, `eyewear-production-capture.png`: production photo and PNG export.
-- `live-ar-product-1-capture.png`, `live-ar-product-2-capture.png`, `live-ar-product-3-capture.png`: real shirt, Modern Clear and Aviator, visually inspected.
-- `real-necklace-capture.png`: live Silver Diamond Necklace, visually inspected.
+Reference controlled-pose measurements (pixels with alpha >= 20):
 
-The older `tests/browser` suites describe earlier preview/wing implementations and are not the production acceptance command. Their obsolete outward-wing requirements were replaced by the production suite above; meaningful landmark/asset/ear and body-engine unit regression coverage remains.
+| Pose        | Left temple | Right temple | Far visible / unobstructed | Hinge error | Lens intrusion |
+| ----------- | ----------: | -----------: | -------------------------: | ----------: | -------------: |
+| Frontal     |         329 |          347 |         Both roots visible |           0 |              0 |
+| -15 degrees |         178 |          896 |                      41.0% |           0 |              0 |
+| +15 degrees |         801 |          189 |                      43.4% |           0 |              0 |
+| -30 degrees |         192 |         1409 |                      23.8% |           0 |              0 |
+| +30 degrees |        1325 |          211 |                      26.4% |           0 |              0 |
 
-## Limits and local startup
+Roll 10 degrees and pitch +/-10 degrees also keep both roots visible with zero hinge separation/lens intrusion. Pixel counts can vary slightly with browser/GPU rasterization; assertions use geometric bounds and meaningful visibility thresholds rather than exact screenshot equality.
 
-Photographed planes have no volumetric frame thickness or manufacturer CAD, and Face Landmarker does not supply anatomical ear surfaces/hair segmentation. Moderate yaw is covered; very large yaw/pitch is bounded to 65/40 degrees. Unknown assets may need their own fit/aperture calibration. Full product-specific Aviator side fitting needs genuine Aviator temple assets. Physical camera quality varies with lighting and landmark confidence.
+Ignored review artifacts are under `frontend/artifacts/`: `eyewear-head-side-{frontal,left-15,left-30,right-15,right-30,roll,up,down}.png`, `eyewear-production-capture.png` and `live-ar-product-2-capture.png`. Inspect the actual rendered output, including the full production photo, before accepting a physical-camera fit.
 
-Backend, terminal 1 (use your existing database credentials):
+## Physical-camera review
+
+A physical webcam has **not** been exercised by the automated checks. No final claim of physical realism is made. Manufacturer volume, anatomical ears, hair occlusion, low-light tracking and a varied-person turning video remain limitations. Extreme yaw/pitch still uses the existing 65/40 degree bounds. Canvas depth is approximate.
+
+Start the existing backend and frontend, open `/try-on?productId=2`, then choose Camera. For developer diagnostics only, use `/try-on?productId=2&arDebug=1`: hinge markers, the actual projected curved centerlines, targets and head-fit data are exposed without entering exports/customer UI.
+
+1. Hold frontal for two seconds. Confirm both short roots touch the hinges, neither fully vanishes, and neither forms an open wing.
+2. Slowly turn left to about 15, then 30 degrees; hold each. Repeat right. The near shaft should follow the side of the head, the far shaft should occlude, and neither should cross a clear lens.
+3. Cross frontal repeatedly in both directions, then make a quicker moderate turn. Check for sudden disappearance, independent temple wobble or a detached frame.
+4. Tilt left/right about 10 degrees, then look up/down about 10 degrees. Combine a slight tilt with a 15-degree turn. Check both 3D hinge connections and vertical fit.
+5. Move from roughly 70 cm to 45 cm and back, then translate left/right. Frame and temple dimensions should change together. Repeat with a narrower/wider face if available.
+6. Briefly leave the camera view, then return. Verify coherent hold/fade and reacquisition. Capture and download; the saved result should match the displayed assembly.
+
+For local startup, use the existing PostgreSQL credentials:
 
 ```powershell
 Set-Location E:\AOOP\TryOnBD-PRODUCTION\backend
@@ -71,32 +121,11 @@ $env:DB_PASSWORD = '<your PostgreSQL password>'
 .\gradlew.bat bootRun
 ```
 
-Frontend, terminal 2:
+In a second terminal:
 
 ```powershell
 Set-Location E:\AOOP\TryOnBD-PRODUCTION\frontend
-npm ci
-npm run setup:vision
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`; backend is `http://localhost:8080`. Keep the existing PostgreSQL service running. The two user-supplied, already-untracked `royal-gold-choker.png` copies are preserved and excluded from this eyewear change; no new necklace product was imported.
-
-## Changed files
-
-- `frontend/src/components/tryon/eyewearRig.js`: fixed 3D assembly and Canvas projection fallback.
-- `frontend/src/components/tryon/eyewearWebGL.js`: textured-plane/depth renderer and GPU cleanup.
-- `frontend/src/components/tryon/lensSurface.js`: real-photo-derived lens material.
-- `frontend/src/components/tryon/headPose.js`: all-axis matrix orientation and guarding.
-- `frontend/src/components/tryon/faceGeometry.js`: shared rig, degree/pitch smoothing, bridge/face surface and diagnostics.
-- `frontend/src/components/tryon/templeGeometry.js`: removed superseded wing projection, retained face contour/texture/ear helpers.
-- `frontend/src/components/tryon/CanvasPreview.jsx`: rig integration, lens loading, consistent occluder coordinates, GPU disposal, production diagnostics.
-- `frontend/src/data/faceAccessories.js`: real-asset manifest and calibrated Aviator lens apertures.
-- `frontend/src/pages/public/TryOn.jsx`: explicit eyewear debug flag within production UX.
-- `frontend/tests/eyewearRig.test.js`: rigid assembly and lens acceptance.
-- `frontend/tests/faceGeometry.test.js`: preserve existing landmark/matrix/asset regression checks; replace obsolete wing expectations.
-- `frontend/tests/shirtGeometry.test.js`: retain body and product-pixel guards; remove the obsolete ban on editing eyewear code.
-- `frontend/tests/production/eyewear.spec.js`: real-pixel/photo/camera/WebGL/fallback/ghost browser checks.
-- `frontend/tests/live/production-ar.spec.js`: read-only product API and actual shirt/eyewear flows.
-- `frontend/package.json`: include rig tests and generic live-test alias.
-- `frontend/public/assets/face-ar/sunglasses/README.md`, `PRODUCTION.md`, this file: current asset/pipeline/run/verification documentation.
+This change is isolated to eyewear geometry/rendering/debugging/tests/docs and the required eyewear fit-metadata validator. Product business data, incoming images, Shirt/Necklace engines, authentication, cart/orders and management implementation remain untouched.

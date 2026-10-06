@@ -325,6 +325,12 @@ const CanvasPreview = forwardRef(function CanvasPreview(
             const p = geometry.temples.find((t) => t.side === side);
             node.style.visibility = p ? 'visible' : 'hidden';
             if (!p) return;
+            node
+              .querySelector('[data-temple-centerline]')
+              .setAttribute(
+                'd',
+                p.screenCenterline.map((q, i) => `${i ? 'L' : 'M'}${q.x},${q.y}`).join(' '),
+              );
             node.querySelector('line').setAttribute('x1', p.screenHinge.x);
             node.querySelector('line').setAttribute('y1', p.screenHinge.y);
             node.querySelector('line').setAttribute('x2', p.screenTarget.x);
@@ -585,6 +591,7 @@ const CanvasPreview = forwardRef(function CanvasPreview(
           {[-1, 1].map((side) => (
             <g key={side} data-temple-vector={side}>
               <line stroke="#ff9900" strokeWidth="1" />
+              <path data-temple-centerline fill="none" stroke="#00ff80" strokeWidth="1.5" />
               <circle r="4" fill="none" stroke="#ff9900" />
               <circle data-asset-hinge r="2" fill="#00ff80" />
               <line data-asset-axis stroke="#00ffff" strokeWidth="0.7" strokeDasharray="3 3" />

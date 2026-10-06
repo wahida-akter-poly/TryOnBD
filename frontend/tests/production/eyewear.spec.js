@@ -15,6 +15,9 @@ test.beforeAll(async () => {
     stdin: {
       resolveDir: process.cwd(),
       contents: `
+      import { eyewearPoses, poseFixture } from './tests/fixtures/eyewearPose.js';
+      import { faceMeshTriangles } from './src/components/tryon/eyewearWebGL.js';
+      import { drawTempleQuad } from './src/components/tryon/templeGeometry.js';
       import { acquireFaceLandmarker } from './src/services/faceLandmarker.js';
       import { loadGlassesAssembly, loadAccessoryAsset } from './src/components/tryon/accessoryAssets.js';
       import { resolveHeadPose } from './src/components/tryon/headPose.js';
@@ -44,35 +47,58 @@ test.beforeAll(async () => {
         const fit = accessoryStyles.find(s=>s.id==='clear');
         const asset = await loadGlassesAssembly(fit.frontFrameSrc,fit.leftTempleSrc,fit.rightTempleSrc);
         const blank=document.createElement('canvas');blank.width=asset.image.width;blank.height=asset.image.height;
+        const basePose=resolveHeadPose(null,found.matrix,0,false,0);
+        const base=faceAnchors(found.landmarks,image.width,image.height,'sunglasses',basePose)[0];
         const results=[];
-        for(const degrees of [0,-15,15,-30,30]) {
-          const r=degrees*Math.PI/180,c=Math.cos(r),s=Math.sin(r);
-          const matrix={rows:4,columns:4,data:[c,0,-s,0,0,1,0,0,s,0,c,0,0,0,0,1]};
-          const pose=resolveHeadPose(null,matrix,0,false,0);
-          const anchor=faceAnchors(found.landmarks,image.width,image.height,'sunglasses',pose)[0];
-          const controls=defaultControls();
+        for(const pose of eyewearPoses) {
+          const fixture=poseFixture(base,pose,fit),anchor=fixture.anchor;
+          const controls={...defaultControls(),mirror:false};
           const transform=accessoryTransform(anchor,controls,image.width,image.height,asset.bounds.width/asset.bounds.height,fit);
           const rig=createEyewearRig(anchor,transform,fit);
           const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
           const ctx=canvas.getContext('2d',{willReadFrequently:true});
-          // Isolate actual photographed temple pixels, excluding the front.
-          drawAccessory(ctx,{...asset,image:blank},[anchor],controls,image.width,image.height,fit);
-          const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;
-          const counts={left:0,right:0,intrusion:0};
+          const mask=document.createElement('canvas');mask.width=canvas.width;mask.height=canvas.height;
+          const mctx=mask.getContext('2d');mctx.translate(transform.x,transform.y);mctx.rotate(transform.angle);
+          drawTempleQuad(mctx,asset.lensOccluder,rig.front.mesh);
+          const lens=mctx.getImageData(0,0,canvas.width,canvas.height).data;
+          const counts={left:0,right:0,intrusion:0},roots={},unmasked={},headHidden={},headOnly={};
           let minX=Infinity,maxX=-Infinity;
-          for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++) {
-            if(pixels[(y*canvas.width+x)*4+3]<10)continue;
-            const dx=x+0.5-transform.x,dy=y+0.5-transform.y;
-            const lx=dx*Math.cos(transform.angle)+dy*Math.sin(transform.angle);
-            if(lx>rig.front.leftHinge.x+1 && lx<rig.front.rightHinge.x-1)counts.intrusion++;
-            if(lx<rig.front.leftHinge.x)counts.left++;else if(lx>rig.front.rightHinge.x)counts.right++;
-            minX=Math.min(minX,lx);maxX=Math.max(maxX,lx);
+          for(const side of [-1,1]) {
+            const name=side<0?'left':'right';
+            const solo={...asset,image:blank,leftTemple:side<0?asset.leftTemple:null,rightTemple:side>0?asset.rightTemple:null};
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            drawAccessory(ctx,solo,[anchor],controls,image.width,image.height,fit);
+            const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+            const hinge=rig.screen(side<0?rig.front.leftHinge:rig.front.rightHinge);
+            roots[name]=0;
+            for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++) {
+              const i=(y*canvas.width+x)*4+3;
+              if(pixels[i]<20)continue;
+              counts[name]++;
+              if(lens[i]>250 && lens[i-4]>250 && lens[i+4]>250 && lens[i-canvas.width*4]>250 && lens[i+canvas.width*4]>250)counts.intrusion++;
+              if(Math.hypot(x+.5-hinge.x,y+.5-hinge.y)<transform.width*.028) roots[name]++;
+              const dx=x+.5-transform.x,dy=y+.5-transform.y,lx=dx*Math.cos(transform.angle)+dy*Math.sin(transform.angle);
+              minX=Math.min(minX,lx);maxX=Math.max(maxX,lx);
+            }
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            drawAccessory(ctx,{...solo,lensOccluder:null},[anchor],controls,image.width,image.height,fit);
+            const headPixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+            headOnly[name]=0;for(let i=3;i<headPixels.length;i+=4)if(headPixels[i]>=20)headOnly[name]++;
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            drawAccessory(ctx,{...solo,lensOccluder:null},[{...anchor,faceSurface:null}],controls,image.width,image.height,fit);
+            const raw=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+            unmasked[name]=0;headHidden[name]=0;
+            for(let i=3;i<raw.length;i+=4)if(raw[i]>=20){unmasked[name]++;if(pixels[i]<20 && lens[i]<20)headHidden[name]++;}
           }
-          const unmasked=document.createElement('canvas');unmasked.width=canvas.width;unmasked.height=canvas.height;
-          const unmaskedCtx=unmasked.getContext('2d');
-          drawAccessory(unmaskedCtx,{...asset,image:blank},[{...anchor,faceSurface:null}],controls,image.width,image.height,fit);
-          const unmaskedPixels=unmaskedCtx.getImageData(0,0,canvas.width,canvas.height).data;
-          let unmaskedCount=0;for(let i=3;i<unmaskedPixels.length;i+=4)if(unmaskedPixels[i]>=10)unmaskedCount++;
+          const frameOnly={...asset,leftTemple:null,rightTemple:null};
+          ctx.clearRect(0,0,canvas.width,canvas.height);
+          drawAccessory(ctx,frameOnly,[anchor],controls,image.width,image.height,fit);
+          const countAlpha=context=>{const px=context.getImageData(0,0,canvas.width,canvas.height).data;
+            let count=0;for(let i=3;i<px.length;i+=4)if(px[i]>=20)count++;return count;};
+          const framePixels=countAlpha(ctx);
+          ctx.clearRect(0,0,canvas.width,canvas.height);
+          drawAccessory(ctx,frameOnly,[{...anchor,faceSurface:null}],controls,image.width,image.height,fit);
+          const unmaskedFrame=countAlpha(ctx);
           const temples=rig.temples.map(t=>{
             const part=t.side<0?asset.leftTemple:asset.rightTemple;
             const mesh=rigidTempleMesh(rig,t,part),h=t.side<0?rig.front.leftHinge:rig.front.rightHinge;
@@ -80,14 +106,36 @@ test.beforeAll(async () => {
               jointError:Math.hypot(mesh.hinge.x-h.x,mesh.hinge.y-h.y),
               vector:t.vector,physicalLength:t.physicalLength,depth:t.target.depth-t.hingeDepth};
           });
-          ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,0,0);
+          ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#444';ctx.fillRect(0,0,canvas.width,canvas.height);
+          // Map the actual face photograph onto its posed MediaPipe triangles.
+          // Gray surrounds the mesh because the detector supplies neither hair nor ears.
+          const triangleIds=Array.from({length:faceMeshTriangles.length/3},(_,i)=>Array.from(faceMeshTriangles.slice(i*3,i*3+3)));
+          // Tessellation excludes the eye/mouth openings; texture their interiors
+          // too so controlled face turns retain the real portrait's visible eyes.
+          for(const ring of [[33,7,163,144,145,153,154,155,133,173,157,158,159,160,161,246],
+            [263,249,390,373,374,380,381,382,362,398,384,385,386,387,388,466],
+            [78,95,88,178,87,14,317,402,318,324,308,415,310,311,312,13,82,81,80,191]])
+            for(let i=1;i+1<ring.length;i++) triangleIds.push([ring[0],ring[i],ring[i+1]]);
+          triangleIds.sort((a,b)=>b.reduce((s,id)=>s+fixture.observed[id].z,0)-a.reduce((s,id)=>s+fixture.observed[id].z,0));
+          for(const ids of triangleIds) {
+            const src=ids.map(id=>({x:found.landmarks[id].x*image.width,y:found.landmarks[id].y*image.height})),dst=ids.map(id=>fixture.observed[id]);
+            const [p0,p1,p2]=src,[q0,q1,q2]=dst,det=(p1.x-p0.x)*(p2.y-p0.y)-(p2.x-p0.x)*(p1.y-p0.y);
+            if(Math.abs(det)<1e-6)continue;
+            const ax=((q1.x-q0.x)*(p2.y-p0.y)-(q2.x-q0.x)*(p1.y-p0.y))/det,
+              bx=((q2.x-q0.x)*(p1.x-p0.x)-(q1.x-q0.x)*(p2.x-p0.x))/det,
+              ay=((q1.y-q0.y)*(p2.y-p0.y)-(q2.y-q0.y)*(p1.y-p0.y))/det,
+              by=((q2.y-q0.y)*(p1.x-p0.x)-(q1.y-q0.y)*(p2.x-p0.x))/det;
+            ctx.save();ctx.beginPath();dst.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.clip();
+            ctx.transform(ax,ay,bx,by,q0.x-ax*p0.x-bx*p0.y,q0.y-ay*p0.x-by*p0.y);ctx.drawImage(image,0,0);ctx.restore();
+          }
           drawAccessory(ctx,asset,[anchor],controls,image.width,image.height,fit);
-          canvas.dataset.rigPose=String(degrees);canvas.style.width='720px';canvas.style.height='auto';
+          canvas.dataset.rigPose=pose.name;canvas.style.width='720px';canvas.style.height='auto';
           document.body.append(canvas);
-          results.push({degrees,counts,unmaskedCount,temples,renderer:canvas.dataset.eyewearRenderer,wingExtent:Number.isFinite(minX)?Math.max(0,
+          results.push({pose,headFit:rig.headFit,headShape:base.headShape,baseYaw:base.rawYawDegrees,counts,roots,unmasked,headHidden,headOnly,framePixels,unmaskedFrame,temples,renderer:canvas.dataset.eyewearRenderer,wingExtent:Number.isFinite(minX)?Math.max(0,
             rig.front.leftHinge.x-minX,maxX-rig.front.rightHinge.x)/transform.width:0});
         }
-        return { actualMatrix: true, results };
+        return {actualMatrix:true,assets:{left:asset.leftTemple.inspection,right:asset.rightTemple.inspection,lenses:asset.lensOutlines.length},results};
+
       };
     `,
     },
@@ -116,47 +164,68 @@ async function setup(page) {
   });
 }
 
-test('real PNG assembly: short frontal arms, attached turning hinges, no far-arm lens ghosts or exaggerated spinning', async ({
+test('real photographed temples fit a coherently posed head at frontal, yaw, pitch and roll', async ({
   page,
 }) => {
   test.setTimeout(120000);
   await setup(page);
   await page.goto('/try-on?productId=2');
   await page.addScriptTag({ content: harness });
-  const { results } = await page.evaluate(() => window.checkEyewear());
-  console.log('Rigid projection pixel checks:', JSON.stringify(results));
-  for (const [degrees, name] of [
-    [0, 'frontal'],
-    [-30, 'left'],
-    [30, 'right'],
-  ])
+  const data = await page.evaluate(() => window.checkEyewear());
+  console.log('Head-side pose pixel checks:', JSON.stringify(data));
+  for (const r of data.results)
     await page
-      .locator(`canvas[data-rig-pose="${degrees}"]`)
-      .screenshot({ path: `artifacts/eyewear-rigid-${name}.png` });
-  for (const r of results) {
+      .locator(`canvas[data-rig-pose="${r.pose.name}"]`)
+      .screenshot({ path: `artifacts/eyewear-head-side-${r.pose.name}.png` });
+  expect(data.assets.lenses).toBe(2);
+  for (const part of [data.assets.left, data.assets.right]) {
+    expect(part.decoded).toBe(true);
+    expect(part.visiblePixels).toBeGreaterThan(20000);
+    expect(part.meanVisibleAlpha).toBeGreaterThan(0.6);
+  }
+  for (const r of data.results) {
     expect(r.renderer).toBe('WEBGL_FACE_DEPTH');
-    expect(r.counts.left + r.counts.right).toBeLessThanOrEqual(r.unmaskedCount);
-    if (r.degrees === 15) expect(r.counts.left + r.counts.right).toBeLessThan(r.unmaskedCount);
-    expect(r.counts.intrusion, `${r.degrees}: temple reflected through lenses`).toBe(0);
+    expect(
+      r.framePixels / r.unmaskedFrame,
+      `${r.pose.name}: front fit lost to depth mask`,
+    ).toBeGreaterThan(0.9);
+    expect(r.counts.intrusion).toBe(0);
     for (const t of r.temples) {
       expect(t.jointError).toBeLessThan(0.001);
+      expect(t.opacity).toBe(1);
       expect(t.depth).toBeGreaterThan(0.45);
     }
-    if (r.degrees === 0) {
-      expect(r.wingExtent).toBeLessThan(0.06);
-      for (const t of r.temples) expect(t.projection).toBeLessThan(0.06);
+    if (r.pose.yaw === 0) {
+      expect(r.counts.left).toBeGreaterThan(120);
+      expect(r.counts.right).toBeGreaterThan(120);
+      expect(r.roots.left).toBeGreaterThan(12);
+      expect(r.roots.right).toBeGreaterThan(12);
+      expect(r.wingExtent).toBeLessThan(0.11);
     } else {
       const near = r.temples.find((t) => t.near),
-        far = r.temples.find((t) => !t.near);
-      expect(near.vector.x * near.side).toBeGreaterThan(0);
-      expect(far.vector.x * far.side).toBeLessThan(0);
-      expect(near.physicalLength).toBeCloseTo(far.physicalLength, 8);
-      expect(near.projection).toBeLessThan(0.45);
-      expect(r.counts[near.side < 0 ? 'left' : 'right']).toBeGreaterThan(40);
-      expect(r.counts[far.side < 0 ? 'left' : 'right']).toBeLessThan(
-        r.counts[near.side < 0 ? 'left' : 'right'],
-      );
+        far = r.temples.find((t) => !t.near),
+        n = near.side < 0 ? 'left' : 'right',
+        f = far.side < 0 ? 'left' : 'right';
+      expect(r.counts[n]).toBeGreaterThan(120);
+      expect(r.roots[n]).toBeGreaterThan(12);
+      expect(r.counts[f]).toBeLessThan(r.counts[n]);
+      expect(r.headOnly[f]).toBeLessThan(r.unmasked[f]);
+      if (Math.abs(r.pose.yaw) === 30) expect(r.counts[f] / r.unmasked[f]).toBeLessThan(0.35);
     }
+  }
+  for (const sign of [-1, 1]) {
+    const frontal = data.results.find(
+      (r) => r.pose.yaw === 0 && r.pose.pitch === 0 && r.pose.roll === 0,
+    );
+    const fifteen = data.results.find((r) => r.pose.yaw === sign * 15),
+      thirty = data.results.find((r) => r.pose.yaw === sign * 30);
+    const near = sign > 0 ? 'left' : 'right',
+      far = sign > 0 ? 'right' : 'left';
+    expect(fifteen.counts[near]).toBeGreaterThan(frontal.counts[near]);
+    expect(thirty.counts[near]).toBeGreaterThan(fifteen.counts[near]);
+    expect(thirty.counts[far] / thirty.unmasked[far]).toBeLessThan(
+      fifteen.counts[far] / fifteen.unmasked[far],
+    );
   }
 });
 
