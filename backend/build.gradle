@@ -18,13 +18,34 @@ repositories {
 }
 
 dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.security:spring-security-crypto'
+	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+	runtimeOnly 'org.postgresql:postgresql'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	testImplementation 'com.h2database:h2'
+	testImplementation 'org.springframework.security:spring-security-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 tasks.named('test') {
 	useJUnitPlatform()
+}
+
+// Opt-in local catalog sync. Uses the existing datasource environment, no HTTP server.
+tasks.register('syncProducts', JavaExec) {
+    group = 'application'
+    description = 'Validate and sync real product asset packages into the configured database'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.tryonbd.backend.TryonbdBackendApplication'
+    args '--spring.profiles.active=product-sync', '--spring.main.web-application-type=none',
+        '--spring.jpa.show-sql=false', '--spring.main.banner-mode=off', '--debug=false',
+        '--logging.level.root=warn', '--logging.level.org.hibernate.SQL=warn'
+    if (project.hasProperty('dryRun')) args '--product.sync.dry-run=true'
 }

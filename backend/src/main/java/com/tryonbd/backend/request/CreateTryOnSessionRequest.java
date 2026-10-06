@@ -5,7 +5,6 @@ import jakarta.validation.constraints.NotNull;
 
 public class CreateTryOnSessionRequest {
 
-    @NotNull
     private Integer userId;
 
     @NotNull

@@ -14,14 +14,13 @@ public class UpdateProductRequest {
     private String name;
 
     @NotNull
-    @Positive
-    private Double price;
+    @PositiveOrZero
+    private java.math.BigDecimal price;
 
     @NotNull
     @PositiveOrZero
     private Integer stockQuantity;
 
-    @NotBlank
     private String imageUrl;
 
     public Integer getCategoryId() {
@@ -40,11 +39,11 @@ public class UpdateProductRequest {
         this.name = name;
     }
 
-    public Double getPrice() {
+    public java.math.BigDecimal getPrice() {
         return price;
     }
 
-    public void setPrice(Double price) {
+    public void setPrice(java.math.BigDecimal price) {
         this.price = price;
     }
 
@@ -63,4 +62,13 @@ public class UpdateProductRequest {
     public void setImageUrl(String imageUrl) {
         this.imageUrl = imageUrl;
     }
+    private String description;
+    private String arType;
+    public String getDescription() { return description; }
+    public void setDescription(String value) { description = value; }
+    public String getArType() { return arType; }
+    public void setArType(String value) { arType = value; }
+    private java.util.Map<String, Object> arMetadata;
+    public java.util.Map<String, Object> getArMetadata() { return arMetadata; }
+    public void setArMetadata(java.util.Map<String, Object> value) { arMetadata = value; }
 }

@@ -1,0 +1,12 @@
+node_modules/
+.gradle/
+build/
+dist/
+.vscode/
+.local-postgres/
+hs_err_pid*.log
+replay_pid*.log
+artifacts/
+.env
+test-results/
+playwright-report/

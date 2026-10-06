@@ -1,0 +1,11 @@
+{
+  "name": "Royal Gold Choker",
+  "description": "Elegant gold-tone statement choker necklace with detailed traditional styling, suitable for festive and occasion wear. Supports virtual try-on.",
+  "price": 2899,
+  "stockQuantity": 12,
+  "category": "Jewelry",
+  "sellerId": 2,
+  "arType": "NECKLACE",
+  "style": "CHOKER",
+  "frontAsset": "front.png"
+}

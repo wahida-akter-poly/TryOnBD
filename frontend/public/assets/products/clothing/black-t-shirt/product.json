@@ -1,0 +1,11 @@
+{
+  "name": "Black T-Shirt",
+  "description": "Pose-aware AR virtual try-on T-shirt",
+  "price": 1299.0,
+  "stockQuantity": 25,
+  "arType": "SHIRT",
+  "sellerId": 1,
+  "category": "Clothing",
+  "existingProductId": 1,
+  "frontAsset": "front.png"
+}

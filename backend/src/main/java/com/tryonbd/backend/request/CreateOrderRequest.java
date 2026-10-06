@@ -11,7 +11,7 @@ public class CreateOrderRequest {
 
     @NotNull
     @PositiveOrZero
-    private Double totalAmount;
+    private java.math.BigDecimal totalAmount;
 
     @NotBlank
     private String orderStatus;
@@ -24,11 +24,11 @@ public class CreateOrderRequest {
         this.userId = userId;
     }
 
-    public Double getTotalAmount() {
+    public java.math.BigDecimal getTotalAmount() {
         return totalAmount;
     }
 
-    public void setTotalAmount(Double totalAmount) {
+    public void setTotalAmount(java.math.BigDecimal totalAmount) {
         this.totalAmount = totalAmount;
     }
 

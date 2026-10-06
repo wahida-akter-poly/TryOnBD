@@ -1,49 +1,35 @@
 package com.tryonbd.backend.controller;
-
-import com.tryonbd.backend.request.CreateUserRequest;
-import com.tryonbd.backend.request.UpdateUserRequest;
+import com.tryonbd.backend.request.*;
+import com.tryonbd.backend.response.UserResponse;
+import com.tryonbd.backend.service.PersistenceService;
 import jakarta.validation.Valid;
+import java.net.URI;
+import java.util.List;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
+import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/users")
 public class UserController {
-
-    // TODO: Integrate service layer and database in the next phase.
-
+    private final PersistenceService service;
+    public UserController(PersistenceService service) { this.service = service; }
+    @PutMapping("/{id}/role")
+    public com.tryonbd.backend.response.UserResponse role(@PathVariable("id") Long id, @RequestBody java.util.Map<String,String> request) { return service.changeRole(id,request.get("role")); }
     @PostMapping
-    public ResponseEntity<CreateUserRequest> create(@Valid @RequestBody CreateUserRequest request) {
-        return ResponseEntity.ok(request);
+    public ResponseEntity<UserResponse> create(@Valid @RequestBody CreateUserRequest request) {
+        var result = service.createUser(request);
+        return ResponseEntity.created(URI.create("/api/users/" + result.id())).body(result);
     }
-
     @GetMapping
-    public ResponseEntity<String> getAll() {
-        return ResponseEntity.ok("Listing users: service/database integration will be implemented in the next phase.");
-    }
-
+    public List<UserResponse> getAll() { return service.listUser(); }
     @GetMapping("/{id}")
-    public ResponseEntity<String> getById(@PathVariable("id") Integer id) {
-        return ResponseEntity.ok("Fetching users with ID " + id
-                + ": service/database integration will be implemented in the next phase.");
-    }
-
+    public UserResponse getById(@PathVariable("id") Long id) { return service.getUser(id); }
     @PutMapping("/{id}")
-    public ResponseEntity<UpdateUserRequest> update(@PathVariable("id") Integer id,
-            @Valid @RequestBody UpdateUserRequest request) {
-        return ResponseEntity.ok(request);
+    public UserResponse update(@PathVariable("id") Long id, @Valid @RequestBody UpdateUserRequest request) {
+        return service.updateUser(id, request);
     }
-
     @DeleteMapping("/{id}")
-    public ResponseEntity<String> delete(@PathVariable("id") Integer id) {
-        return ResponseEntity.ok("Deleting users with ID " + id
-                + ": service/database integration will be implemented in the next phase.");
+    public ResponseEntity<Void> delete(@PathVariable("id") Long id) {
+        service.deleteUser(id);
+        return ResponseEntity.noContent().build();
     }
 }

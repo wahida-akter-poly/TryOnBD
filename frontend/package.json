@@ -1,0 +1,39 @@
+{
+  "name": "tryonbd-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "node --test tests/catalog.test.js tests/faceGeometry.test.js tests/eyewearRig.test.js tests/earTracking.test.js tests/necklaceGeometry.test.js tests/necklaceAssets.test.js tests/shirtGeometry.test.js tests/shirtSilhouette.test.js tests/productAssets.test.js tests/pupillaryDistance.test.js",
+    "setup:vision": "node scripts/setup-vision.mjs",
+    "assets:face": "node scripts/create-face-assets.mjs",
+    "test:browser": "playwright test --config playwright.production.config.js",
+    "format:check": "prettier --check src tests scripts *.js *.json *.md index.html",
+    "test:production": "playwright test --config playwright.production.config.js",
+    "test:ar-diagnostics": "playwright test --config playwright.config.js",
+    "test:live": "playwright test --config playwright.necklace-live.config.js",
+    "test:necklace-live": "playwright test --config playwright.necklace-live.config.js",
+    "sync:products": "node scripts/sync-products.mjs"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "0.10.32",
+    "axios": "^1.12.2",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.18.4",
+    "recharts": "^3.10.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.1",
+    "@vitejs/plugin-react": "^4.7.0",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "prettier": "^3.9.9",
+    "tailwindcss": "^3.4.17",
+    "vite": "^6.3.6"
+  }
+}
