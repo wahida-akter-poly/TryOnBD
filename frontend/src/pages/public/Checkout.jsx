@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Minus, Plus, Trash2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { services } from '../../services';
 import { errorMessage } from '../../services/api';
@@ -20,6 +21,14 @@ export default function Checkout() {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   const navigate = useNavigate();
+  async function updateCart(productId, quantity) {
+    setBusy(true);
+    try {
+      await cartQuantity(productId, quantity);
+    } finally {
+      setBusy(false);
+    }
+  }
   if (restoring) return <LoadingState />;
   if (!identity)
     return (
@@ -30,12 +39,18 @@ export default function Checkout() {
         </Link>
       </div>
     );
+  if (identity.role !== 'customer') return <Navigate to="/seller/dashboard" replace />;
   if (catalogLoading) return <LoadingState />;
   const items = state.cart.map((item) => ({
     ...item,
     product: state.products.find((p) => p.id === item.productId),
   }));
   const pricingAvailable = items.every((item) => item.product);
+  const subtotal = items.reduce(
+    (sum, item) => sum + (item.product ? Number(item.product.price) * item.quantity : 0),
+    0,
+  );
+  const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
   async function checkout() {
     setBusy(true);
     setError('');
@@ -53,78 +68,125 @@ export default function Checkout() {
     <div className="container page">
       <h1>Your cart</h1>
       {accountError ? (
-        <ErrorState message={accountError} retry={() => refreshAccount().catch(() => {})} />
+        <ErrorState message={accountError} retry={() => refreshAccount()} />
       ) : catalogError ? (
         <ErrorState message={catalogError} retry={refreshCatalog} />
       ) : !items.length ? (
-        <EmptyState title="Your cart is empty" text="Find something you love in the collection." />
+        <section className="cart-empty panel">
+          <EmptyState
+            title="Your cart is empty"
+            text="Find something you love in the collection."
+          />
+          <Link className="btn btn-primary" to="/products">
+            Continue Shopping
+          </Link>
+        </section>
       ) : (
-        <>
-          <fieldset disabled={busy} className="face-fieldset">
-            {items.map((item) => (
-              <article className="panel cart-row" key={item.productId}>
-                {item.product && (
-                  <ProductImage product={item.product} className="catalog-thumbnail" />
-                )}
-                <Link to={`/products/${item.productId}`}>
-                  {item.product?.name || `Product ${item.productId}`}
-                </Link>
-                {item.product && <Price value={item.product.price} />}
-                <input
-                  aria-label={`Quantity for ${item.product?.name || item.productId}`}
-                  disabled={!item.product}
-                  type="number"
-                  min="1"
-                  max={item.product?.stockQuantity}
-                  value={item.quantity}
-                  onChange={async (e) => {
-                    setBusy(true);
-                    try {
-                      await cartQuantity(item.productId, Number(e.target.value));
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                />
-                <Button
-                  variant="ghost"
-                  onClick={async () => {
-                    setBusy(true);
-                    try {
-                      await cartQuantity(item.productId, 0);
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  Remove
-                </Button>
-              </article>
-            ))}
-            {pricingAvailable ? (
-              <p>
-                Total{' '}
-                <Price
-                  value={items.reduce((sum, item) => sum + item.product.price * item.quantity, 0)}
-                />
-              </p>
-            ) : (
+        <div className="customer-cart-layout">
+          <section className="customer-cart-items" aria-label="Shopping cart">
+            <div className="customer-cart-heading">
+              <h2>Your items</h2>
+              <span>
+                {itemCount} {itemCount === 1 ? 'item' : 'items'}
+              </span>
+            </div>
+            <fieldset disabled={busy} className="face-fieldset customer-cart-fieldset">
+              {items.map((item) => (
+                <article className="customer-cart-item" key={item.productId}>
+                  {item.product ? (
+                    <ProductImage product={item.product} className="customer-cart-image" />
+                  ) : (
+                    <div className="customer-cart-image" aria-hidden="true" />
+                  )}
+                  <div className="customer-cart-product">
+                    <Link to={`/products/${item.productId}`}>
+                      <h3>{item.product?.name || `Product ${item.productId}`}</h3>
+                    </Link>
+                    <p className="customer-cart-unit-price">
+                      {item.product ? <Price value={item.product.price} /> : 'Price unavailable'}
+                    </p>
+                    <div className="customer-cart-actions">
+                      <div className="customer-cart-quantity" aria-label="Quantity controls">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          aria-label={`Decrease ${item.product?.name || 'item'} quantity`}
+                          disabled={!item.product || item.quantity <= 1}
+                          onClick={() => updateCart(item.productId, item.quantity - 1)}
+                        >
+                          <Minus size={16} />
+                        </Button>
+                        <span aria-label={`Quantity ${item.quantity}`}>{item.quantity}</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          aria-label={`Increase ${item.product?.name || 'item'} quantity`}
+                          disabled={!item.product || item.quantity >= item.product.stockQuantity}
+                          onClick={() => updateCart(item.productId, item.quantity + 1)}
+                        >
+                          <Plus size={16} />
+                        </Button>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        aria-label={`Remove ${item.product?.name || 'item'}`}
+                        onClick={() => updateCart(item.productId, 0)}
+                      >
+                        <Trash2 size={16} /> Remove
+                      </Button>
+                    </div>
+                    {item.product && <small>{item.product.stockQuantity} available</small>}
+                  </div>
+                  <strong className="customer-cart-line-total">
+                    {item.product ? (
+                      <Price value={Number(item.product.price) * item.quantity} />
+                    ) : (
+                      '—'
+                    )}
+                  </strong>
+                </article>
+              ))}
+            </fieldset>
+            <Link className="btn btn-ghost customer-continue-shopping" to="/products">
+              Continue Shopping
+            </Link>
+          </section>
+          <aside className="customer-order-summary">
+            <h2>Order Summary</h2>
+            <div>
+              <span>Subtotal ({itemCount} items)</span>
+              <strong>
+                <Price value={subtotal} />
+              </strong>
+            </div>
+            <div>
+              <span>Shipping</span>
+              <strong>Calculated at checkout</strong>
+            </div>
+            <div className="customer-estimated-total">
+              <span>Estimated Total</span>
+              <strong>
+                <Price value={subtotal} />
+              </strong>
+            </div>
+            {!pricingAvailable && (
               <p role="alert">
                 Pricing is unavailable for removed products. Remove these items before placing an
                 order.
               </p>
             )}
-            <p>Place your order for seller confirmation. Payment is arranged separately.</p>
-            <Button busy={busy} disabled={!pricingAvailable} onClick={checkout}>
-              Place order
+            {error && (
+              <p role="alert" className="error-text">
+                {error}
+              </p>
+            )}
+            <Button busy={busy} disabled={!pricingAvailable || busy} onClick={checkout}>
+              Proceed to Checkout
             </Button>
-          </fieldset>
-        </>
-      )}
-      {error && (
-        <p role="alert" className="error-text">
-          {error}
-        </p>
+            <p>Shipping is calculated during checkout. Payment is arranged separately.</p>
+          </aside>
+        </div>
       )}
     </div>
   );

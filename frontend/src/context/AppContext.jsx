@@ -132,8 +132,12 @@ export function AppProvider({ children }) {
     return () => clearTimeout(timer);
   }, [toasts]);
   async function cartQuantity(id, quantity) {
-    if (!identity) {
-      toast('Please sign in to use your cart.', 'error');
+    if (!identity || identity.role !== 'customer') {
+      toast('Sign in as a customer to use your cart.', 'error');
+      return false;
+    }
+    if (!Number.isInteger(quantity) || quantity < 0) {
+      toast('Cart quantity must be a whole number zero or greater.', 'error');
       return false;
     }
     const ticket = generation.current;
@@ -154,8 +158,12 @@ export function AppProvider({ children }) {
     }
   }
   async function addToCart(product, quantity = 1) {
-    if (!identity) {
-      toast('Please sign in to use your cart.', 'error');
+    if (!identity || identity.role !== 'customer') {
+      toast('Sign in as a customer to use your cart.', 'error');
+      return false;
+    }
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > product.stockQuantity) {
+      toast('Requested quantity is not available in stock.', 'error');
       return false;
     }
     const ticket = generation.current;

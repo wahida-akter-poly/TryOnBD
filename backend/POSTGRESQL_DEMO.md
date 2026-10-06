@@ -36,7 +36,6 @@ Start the already-built backend quickly:
 $env:DB_URL = "jdbc:postgresql://127.0.0.1:5433/tryonbd"
 $env:DB_USERNAME = "postgres"
 $env:DB_PASSWORD = "postgres"
-$env:DEMO_SEED = "true"
 java -XX:TieredStopAtLevel=1 -jar .\build\libs\tryonbd-backend-0.0.1-SNAPSHOT.jar
 ```
 
@@ -59,13 +58,27 @@ Set-Location E:\AOOP\TryOnBD\backend
 $env:DB_URL = "jdbc:postgresql://127.0.0.1:5433/tryonbd"
 $env:DB_USERNAME = "postgres"
 $env:DB_PASSWORD = Read-Host "PostgreSQL password"
-$env:DEMO_SEED = "true"
 .\gradlew.bat bootRun
 ```
 
-Defaults are 127.0.0.1:5433 / tryonbd / postgres / postgres. Demo seeding is OFF unless DEMO_SEED=true.
-The seed inserts only into empty tables: one user, one seller, two categories, two products.
-Restarting does not duplicate these rows. No H2 dependency or fallback is used.
+Defaults are 127.0.0.1:5433 / tryonbd / postgres / postgres. Normal startup does not seed demo data.
+
+### Seed demo customer and existing Anzara seller
+
+Run the opt-in seed profile against the existing database. It creates or updates the two BCrypt-backed
+login users, links the seller user to existing Seller ID 2, and never creates a seller record. Stop
+the process after `Demo accounts ready` appears, then start the backend normally:
+
+```powershell
+$env:DB_URL = "jdbc:postgresql://127.0.0.1:5433/tryonbd"
+$env:DB_USERNAME = "postgres"
+$env:DB_PASSWORD = "postgres"
+.\gradlew.bat bootRun --args="--spring.profiles.active=demo-seed --server.port=8082"
+```
+
+The seed is idempotent and refuses to proceed if Seller ID 2 is not Anzara or either demo user has
+an incompatible seller-profile link. Demo logins: `customer@tryonbd.demo` / `Customer@123` and
+`anzara@tryonbd.demo` / `Anzara@123`.
 
 Look for Hikari PostgreSQL connection, Hibernate EntityManagerFactory initialization, and Tomcat on port 8080.
 

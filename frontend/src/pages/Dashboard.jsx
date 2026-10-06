@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { services } from '../services';
 import { api, errorMessage } from '../services/api';
 import { Button, EmptyState, ErrorState, LoadingState, Price } from '../components/common/UI';
 import { ProductImage } from '../components/product/ProductCard';
 export default function Dashboard() {
-  const { section = 'profile' } = useParams();
+  const { section: routeSection } = useParams();
+  const location = useLocation();
+  const section =
+    routeSection || (location.pathname === '/seller/dashboard/products' ? 'products' : 'profile');
   const { user, role, state, refreshCatalog, refreshAccount } = useApp();
   const [records, setRecords] = useState([]),
     [sellers, setSellers] = useState([]),
@@ -29,8 +32,12 @@ export default function Dashboard() {
     try {
       if (section === 'profile') {
         if (role === 'seller') {
-          const { data } = await services.account.seller();
-          setSeller(data);
+          const [profile, products] = await Promise.all([
+            services.account.seller(),
+            services.account.products(),
+          ]);
+          setSeller(profile.data);
+          setRecords(products.data);
         }
         return;
       }
@@ -98,20 +105,30 @@ export default function Dashboard() {
               <h3>{seller.businessName}</h3>
               <p>{seller.contactEmail}</p>
               <p>{seller.phone}</p>
+              <p>Your products: {records.length}</p>
             </>
           )}
-          <div className="summary-grid">
-            <Link to="/checkout">
-              {state.cart.reduce((sum, i) => sum + i.quantity, 0)} cart items
-            </Link>
-            {role !== 'seller' && (
+          {role === 'seller' ? (
+            <Link to="/seller/dashboard/products">Manage your products</Link>
+          ) : (
+            <div className="summary-grid">
+              <Link to="/checkout">
+                {state.cart.reduce((sum, i) => sum + i.quantity, 0)} cart items
+              </Link>
               <Link to={`/dashboard/${role}/orders`}>{state.orders.length} orders</Link>
-            )}
-            <span>{state.sessions.length} try-on sessions</span>
-          </div>
+              <span>{state.sessions.length} try-on sessions</span>
+            </div>
+          )}
         </div>
       ) : (
         <>
+          {role === 'seller' && seller && (
+            <section aria-label={`${seller.businessName} seller products`}>
+              <h2>
+                {seller.businessName} products ({records.length})
+              </h2>
+            </section>
+          )}
           {['products', 'categories', 'sellers'].includes(section) && (
             <Button onClick={() => setEditing({})}>Create {section.slice(0, -1)}</Button>
           )}
@@ -152,7 +169,8 @@ export default function Dashboard() {
                       <ProductImage product={record} className="catalog-thumbnail" />
                       <Price value={record.price} />
                       <p>Stock: {record.stockQuantity}</p>
-                      <p>AR: {record.arType || 'NONE'}</p>
+                      <p>Category: {record.categoryName || 'Uncategorized'}</p>
+                      <p>AR type: {record.arType || 'NONE'}</p>
                       <p>{record.imageUrl || 'No product image uploaded'}</p>
                     </>
                   ) : section === 'categories' ? (

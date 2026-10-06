@@ -16,10 +16,16 @@ export default function Navbar() {
               {group}
             </Link>
           ))}
-          <Link to="/checkout">Cart ({state.cart.reduce((n, item) => n + item.quantity, 0)})</Link>
+          {(!identity || role === 'customer') && (
+            <Link to="/checkout">
+              Cart ({state.cart.reduce((n, item) => n + item.quantity, 0)})
+            </Link>
+          )}
           {identity ? (
             <>
-              <Link to={`/dashboard/${role}`}>Account</Link>
+              <Link to={role === 'seller' ? '/seller/dashboard' : `/dashboard/${role}`}>
+                Account
+              </Link>
               <button className="btn btn-ghost" onClick={logout}>
                 Sign out
               </button>

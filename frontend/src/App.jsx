@@ -84,6 +84,10 @@ export default function App() {
               <Route index element={<Dashboard key={location.pathname} />} />
               <Route path=":section" element={<Dashboard key={location.pathname} />} />
             </Route>
+            <Route path="seller/dashboard" element={<DashboardLayout sellerRoute />}>
+              <Route index element={<Dashboard key={location.pathname} />} />
+              <Route path="products" element={<Dashboard key={location.pathname} />} />
+            </Route>
           </Routes>
         </Suspense>
       </ErrorBoundary>

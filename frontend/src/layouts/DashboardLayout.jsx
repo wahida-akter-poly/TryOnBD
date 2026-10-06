@@ -2,12 +2,12 @@ import { Link, Outlet, useParams, Navigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { LoadingState } from '../components/common/UI';
 import Navbar from '../components/layout/Navbar';
-export default function DashboardLayout() {
+export default function DashboardLayout({ sellerRoute = false }) {
   const { role: requested } = useParams();
   const { identity, role, restoring, accountError } = useApp();
   if (restoring) return <LoadingState />;
   if (!identity) return <Navigate to="/login" replace />;
-  if (requested !== role)
+  if (sellerRoute ? role !== 'seller' : requested !== role)
     return (
       <div className="container page">
         <h1>Access denied</h1>
@@ -20,6 +20,7 @@ export default function DashboardLayout() {
       : role === 'seller'
         ? ['profile', 'products']
         : ['profile', 'users', 'sellers', 'products', 'categories', 'orders'];
+  const dashboardPath = sellerRoute ? '/seller/dashboard' : `/dashboard/${role}`;
   return (
     <>
       <Navbar />
@@ -28,7 +29,7 @@ export default function DashboardLayout() {
           <h2>{role.replace('_', ' ')} account</h2>
           <nav>
             {sections.map((s) => (
-              <Link key={s} to={`/dashboard/${role}/${s}`}>
+              <Link key={s} to={`${dashboardPath}/${s}`}>
                 {s.replaceAll('-', ' ')}
               </Link>
             ))}

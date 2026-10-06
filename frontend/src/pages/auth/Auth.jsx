@@ -15,6 +15,7 @@ export default function Auth() {
       phone: '',
       address: '',
     }),
+    [selectedRole, setSelectedRole] = useState('CUSTOMER'),
     [remember, setRemember] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
@@ -27,8 +28,28 @@ export default function Auth() {
       const { data } = await services.auth[register ? 'register' : 'login'](
         register ? form : { email: form.email, password: form.password },
       );
+      const roleMatches =
+        selectedRole === 'ADMIN'
+          ? ['ADMIN', 'SUPER_ADMIN'].includes(data.user.role)
+          : data.user.role === selectedRole;
+      if (!register && !roleMatches) {
+        const label =
+          selectedRole === 'SELLER'
+            ? 'a Seller'
+            : selectedRole === 'ADMIN'
+              ? 'an Admin'
+              : 'a Customer';
+        setError(`This account is not registered as ${label}.`);
+        return;
+      }
       login(data.user.role.toLowerCase(), remember, data.user.id, data.accessToken, data.user);
-      navigate(`/dashboard/${data.user.role.toLowerCase()}`);
+      navigate(
+        data.user.role === 'SELLER'
+          ? '/seller/dashboard'
+          : data.user.role === 'CUSTOMER'
+            ? '/'
+            : `/dashboard/${data.user.role.toLowerCase()}`,
+      );
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -48,6 +69,20 @@ export default function Auth() {
       <section className="auth-form-wrap">
         <h1>{register ? 'Create your account' : 'Good to see you again.'}</h1>
         <form className="form-stack" onSubmit={submit}>
+          {!register && (
+            <label>
+              Login as
+              <select
+                aria-label="Login as"
+                value={selectedRole}
+                onChange={(event) => setSelectedRole(event.target.value)}
+              >
+                <option value="CUSTOMER">CUSTOMER</option>
+                <option value="SELLER">SELLER</option>
+                <option value="ADMIN">ADMIN</option>
+              </select>
+            </label>
+          )}
           {register && (
             <Input label="Full name" required value={form.fullName} onChange={change('fullName')} />
           )}
