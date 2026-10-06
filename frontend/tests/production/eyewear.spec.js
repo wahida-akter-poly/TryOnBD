@@ -152,7 +152,8 @@ test.beforeAll(async () => {
             const mesh=rigidTempleMesh(rig,t,part),h=t.side<0?rig.front.leftHinge:rig.front.rightHinge;
             return {side:t.side,near:t.near,projection:t.projectedLengthRatio,opacity:t.opacity,
               jointError:Math.hypot(mesh.hinge.x-h.x,mesh.hinge.y-h.y),
-              vector:t.vector,physicalLength:t.physicalLength,depth:t.target.depth-t.hingeDepth};
+              vector:t.vector,physicalLength:t.physicalLength,depth:t.target.depth-t.hingeDepth,
+              seatRise:rig.templePoint(t.side,1).y-rig.templePoint(t.side,0).y};
           });
           ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#444';ctx.fillRect(0,0,canvas.width,canvas.height);
           // Map the actual face photograph onto its posed MediaPipe triangles.
@@ -201,11 +202,27 @@ const realFrames = {
   categoryId: 1,
   imageUrl: '/assets/products/eyewear/modern-clear-frame/front.png',
 };
-async function setup(page) {
+const goldenManifest = JSON.parse(
+  await readFile('public/assets/products/eyewear/golden-frame/product.json', 'utf8'),
+);
+const goldenBase = '/assets/products/eyewear/golden-frame/';
+const goldenFrames = {
+  ...goldenManifest,
+  id: 906,
+  categoryId: 1,
+  imageUrl: goldenBase + goldenManifest.frontAsset,
+  arMetadata: {
+    frontAsset: goldenBase + goldenManifest.frontAsset,
+    leftTempleAsset: goldenBase + goldenManifest.leftTempleAsset,
+    rightTempleAsset: goldenBase + goldenManifest.rightTempleAsset,
+    fitProfile: goldenManifest.fitProfile,
+  },
+};
+async function setup(page, product = realFrames) {
   await page.route('**/api/**', (route) => {
     const p = new URL(route.request().url()).pathname;
-    if (p === '/api/products') return route.fulfill({ json: [realFrames] });
-    if (p === '/api/products/2') return route.fulfill({ json: realFrames });
+    if (p === '/api/products') return route.fulfill({ json: [product] });
+    if (p === '/api/products/' + product.id) return route.fulfill({ json: product });
     if (p === '/api/categories')
       return route.fulfill({ json: [{ id: 1, categoryName: 'Eyewear' }] });
     return route.fulfill({ status: 401, json: { message: 'Sign in required' } });
@@ -242,6 +259,8 @@ test('real photographed temples fit a coherently posed head at frontal, yaw, pit
       expect(t.jointError).toBeLessThan(0.001);
       expect(t.opacity).toBe(1);
       expect(t.depth).toBeGreaterThan(0.45);
+      expect(t.seatRise).toBeLessThan(0);
+      expect(t.seatRise).toBeGreaterThan(-0.1);
     }
     if (r.pose.yaw === 0) {
       expect(r.counts.left).toBeGreaterThan(120);
@@ -258,7 +277,9 @@ test('real photographed temples fit a coherently posed head at frontal, yaw, pit
       expect(r.roots[n]).toBeGreaterThan(12);
       expect(r.counts[f]).toBeLessThan(r.counts[n]);
       expect(r.headOnly[f]).toBeLessThan(r.unmasked[f]);
-      if (Math.abs(r.pose.yaw) === 30) expect(r.counts[f] / r.unmasked[f]).toBeLessThan(0.35);
+      // Preserve a larger physically exposed far root; the old 35% cap
+      // rewarded the premature disappearance this regression is fixing.
+      if (Math.abs(r.pose.yaw) === 30) expect(r.counts[f] / r.unmasked[f]).toBeLessThan(0.5);
     }
   }
   for (const sign of [-1, 1]) {
@@ -277,30 +298,48 @@ test('real photographed temples fit a coherently posed head at frontal, yaw, pit
   }
 });
 
-test('production eyewear uses selected backend image, actual MediaPipe fitting, export and hidden diagnostics', async ({
-  page,
-}) => {
-  test.setTimeout(120000);
-  await setup(page);
-  await page.goto('/try-on?productId=2');
-  await expect(page.getByText(realFrames.name, { exact: true })).toBeVisible();
-  await expect(page.getByLabel('AR diagnostics')).toHaveCount(0);
-  await page
-    .getByLabel('Upload photo', { exact: true })
-    .setInputFiles('tests/fixtures/ear-front.jpg');
-  await expect(page.getByText('Frame fitted', { exact: true })).toBeVisible({ timeout: 60000 });
-  expect(await page.evaluate(() => window.__tryOnBridgeDebug)).toBeUndefined();
-  await expect(page.getByLabel('Virtual try-on preview')).toHaveAttribute(
-    'data-eyewear-renderer',
-    'WEBGL_FACE_DEPTH',
+for (const product of [realFrames, goldenFrames])
+  test(
+    product.name + ' storefront, details, MediaPipe photo, export and hidden diagnostics',
+    async ({ page }) => {
+      test.setTimeout(120000);
+      await setup(page, product);
+      await page.goto('/products?group=Eyewear');
+      const card = page
+        .locator('.product-card')
+        .filter({ has: page.getByRole('heading', { name: product.name, exact: true }) });
+      await expect
+        .poll(() => card.locator('img').evaluate((img) => img.complete && img.naturalWidth > 0))
+        .toBe(true);
+      await card.getByRole('link', { name: 'View Details', exact: true }).click();
+      await expect(page.getByRole('img', { name: product.name, exact: true })).toHaveAttribute(
+        'src',
+        product.imageUrl,
+      );
+      await page.getByRole('link', { name: 'Try Virtually', exact: true }).click();
+      await expect(page).toHaveURL(new RegExp('productId=' + product.id + '$'));
+      await expect(page.getByText(product.name, { exact: true })).toBeVisible();
+      await expect(page.getByLabel('AR diagnostics')).toHaveCount(0);
+      await page
+        .getByLabel('Upload photo', { exact: true })
+        .setInputFiles('tests/fixtures/ear-front.jpg');
+      await expect(page.getByText('Frame fitted', { exact: true })).toBeVisible({ timeout: 60000 });
+      expect(await page.evaluate(() => window.__tryOnBridgeDebug)).toBeUndefined();
+      await expect(page.getByLabel('Virtual try-on preview')).toHaveAttribute(
+        'data-eyewear-renderer',
+        'WEBGL_FACE_DEPTH',
+      );
+      await page.screenshot({
+        path: 'artifacts/eyewear-production-' + product.id + '-frontal.png',
+        fullPage: true,
+      });
+      const event = page.waitForEvent('download');
+      await page.getByRole('button', { name: 'Download PNG', exact: true }).click();
+      const download = await event;
+      expect(await download.failure()).toBeNull();
+      await download.saveAs('artifacts/eyewear-production-' + product.id + '-capture.png');
+    },
   );
-  await page.screenshot({ path: 'artifacts/eyewear-production-frontal.png', fullPage: true });
-  const event = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Download PNG', exact: true }).click();
-  const download = await event;
-  expect(await download.failure()).toBeNull();
-  await download.saveAs('artifacts/eyewear-production-capture.png');
-});
 
 test('eyewear diagnostics require the explicit flag and report the rigid geometry', async ({
   page,
@@ -340,54 +379,59 @@ test('Canvas fallback keeps rigid fitting and export when WebGL is unavailable',
   await expect(page.getByRole('button', { name: 'Download PNG', exact: true })).toBeEnabled();
 });
 
-test('eyewear simulated camera uses the mirrored 3D pose and captures exactly before releasing the stream', async ({
-  page,
-}) => {
-  test.setTimeout(120000);
-  await setup(page);
-  const photo = await readFile('tests/fixtures/ear-front.jpg');
-  await page.route('**/__eyewear-camera.jpg', (route) =>
-    route.fulfill({ contentType: 'image/jpeg', body: photo }),
+for (const product of [realFrames, goldenFrames])
+  test(
+    product.name + ' simulated camera uses mirrored 3D fitting, capture and stream release',
+    async ({ page }) => {
+      test.setTimeout(120000);
+      await setup(page, product);
+      const photo = await readFile('tests/fixtures/ear-front.jpg');
+      await page.route('**/__eyewear-camera.jpg', (route) =>
+        route.fulfill({ contentType: 'image/jpeg', body: photo }),
+      );
+      await page.addInitScript(() => {
+        window.cameraRequests = 0;
+        Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+          configurable: true,
+          value: async () => {
+            window.cameraRequests++;
+            const image = new Image();
+            image.src = '/__eyewear-camera.jpg';
+            await image.decode();
+            const canvas = Object.assign(document.createElement('canvas'), {
+              width: 640,
+              height: 800,
+            });
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0, 640, 800);
+            setInterval(() => ctx.drawImage(image, 0, 0, 640, 800), 40);
+            const stream = canvas.captureStream(24);
+            window.testCameraTrack = stream.getVideoTracks()[0];
+            return stream;
+          },
+        });
+        Object.defineProperty(navigator.mediaDevices, 'enumerateDevices', {
+          configurable: true,
+          value: async () => [],
+        });
+      });
+      await page.goto('/try-on?productId=' + product.id);
+      expect(await page.evaluate(() => window.cameraRequests)).toBe(0);
+      await page.getByRole('button', { name: 'Camera', exact: true }).click();
+      await expect(page.getByText('Frame fitted', { exact: true })).toBeVisible({ timeout: 60000 });
+      await expect(page.getByLabel('Virtual try-on preview')).toHaveAttribute(
+        'data-eyewear-renderer',
+        'WEBGL_FACE_DEPTH',
+      );
+      await page.getByRole('button', { name: 'Capture', exact: true }).click();
+      await expect(page.getByText('Captured', { exact: true })).toBeVisible();
+      expect(await page.evaluate(() => window.testCameraTrack.readyState)).toBe('ended');
+      await expect(page.locator('video')).toHaveJSProperty('srcObject', null);
+      const event = page.waitForEvent('download');
+      await page.getByRole('button', { name: 'Download PNG', exact: true }).click();
+      expect((await event).suggestedFilename()).toBe('tryonbd-sunglasses-result.png');
+    },
   );
-  await page.addInitScript(() => {
-    window.cameraRequests = 0;
-    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
-      configurable: true,
-      value: async () => {
-        window.cameraRequests++;
-        const image = new Image();
-        image.src = '/__eyewear-camera.jpg';
-        await image.decode();
-        const canvas = Object.assign(document.createElement('canvas'), { width: 640, height: 800 });
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(image, 0, 0, 640, 800);
-        setInterval(() => ctx.drawImage(image, 0, 0, 640, 800), 40);
-        const stream = canvas.captureStream(24);
-        window.testCameraTrack = stream.getVideoTracks()[0];
-        return stream;
-      },
-    });
-    Object.defineProperty(navigator.mediaDevices, 'enumerateDevices', {
-      configurable: true,
-      value: async () => [],
-    });
-  });
-  await page.goto('/try-on?productId=2');
-  expect(await page.evaluate(() => window.cameraRequests)).toBe(0);
-  await page.getByRole('button', { name: 'Camera', exact: true }).click();
-  await expect(page.getByText('Frame fitted', { exact: true })).toBeVisible({ timeout: 60000 });
-  await expect(page.getByLabel('Virtual try-on preview')).toHaveAttribute(
-    'data-eyewear-renderer',
-    'WEBGL_FACE_DEPTH',
-  );
-  await page.getByRole('button', { name: 'Capture', exact: true }).click();
-  await expect(page.getByText('Captured', { exact: true })).toBeVisible();
-  expect(await page.evaluate(() => window.testCameraTrack.readyState)).toBe('ended');
-  await expect(page.locator('video')).toHaveJSProperty('srcObject', null);
-  const event = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Download PNG', exact: true }).click();
-  expect((await event).suggestedFilename()).toBe('tryonbd-sunglasses-result.png');
-});
 
 test('real Aviator lens material removes baked rear-arm ghosts while keeping original frame hardware and URL', async ({
   page,
@@ -433,7 +477,7 @@ test('rotated photographic sources and live pose reversals keep visible attached
   }
 });
 
-test('Golden Frame genuine package fits all eight head poses with its own metadata and pixels', async ({
+test('Golden Frame genuine package fits yaw, roll, pitch and distance with its own metadata and pixels', async ({
   page,
 }) => {
   test.setTimeout(120000);
@@ -467,6 +511,8 @@ test('Golden Frame genuine package fits all eight head poses with its own metada
     for (const t of r.temples) {
       expect(t.jointError).toBeLessThan(0.001);
       expect(t.opacity).toBe(1);
+      expect(t.seatRise).toBeLessThan(0);
+      expect(t.seatRise).toBeGreaterThan(-0.1);
     }
     for (const side of ['left', 'right'])
       expect(r.roots[side], JSON.stringify(r)).toBeGreaterThan(12);

@@ -76,7 +76,8 @@ class ProductAssetSyncTests {
 
     @Test void eyewearTempleCalibrationPersistsThroughTheExistingIdempotentSync() throws Exception {
         var m=manifest("EYEWEAR");m.put("category","Eyewear");
-        var fit=Map.of("templeDepth",.62,"templeSplay",.025,"templeCurve",.065,"templeRootLength",.18,"templeVerticalOffset",.012);
+        var fit=Map.of("templeDepth",.62,"templeSplay",.025,"templeCurve",.065,"templeRootLength",.18,"templeVerticalOffset",-.006,
+            "frontalVisibleFraction",.065,"earSeatOffset",-.012,"earSeatWeight",.9);
         m.put("fitProfile",fit);m.put("leftTempleAsset","left-temple.png");m.put("rightTempleAsset","right-temple.png");
         var p=folder("eyewear","measured-frame",m);png(p.resolve("left-temple.png"));png(p.resolve("right-temple.png"));
         var first=sync.sync(discover(),null,false).getFirst();entities.flush();entities.clear();
@@ -88,7 +89,9 @@ class ProductAssetSyncTests {
     @Test void eyewearRejectsUnsafeOrUnsupportedTempleCalibrationBeforeSync() throws Exception {
         var m=manifest("EYEWEAR");m.put("category","Eyewear");var p=folder("eyewear","invalid-fit",m);
         for(var fit:List.of(Map.of("templeCurve",0),Map.of("templeCurve",.13),Map.of("templeRootLength",.01),
-            Map.of("templeRootLength",.4),Map.of("templeVerticalOffset",-.1),Map.of("templeVerticalOffset",.1),Map.of("forceVisible",1))) {
+            Map.of("templeRootLength",.4),Map.of("templeVerticalOffset",-.1),Map.of("templeVerticalOffset",.1),
+            Map.of("frontalVisibleFraction",.01),Map.of("frontalVisibleFraction",.08),Map.of("earSeatOffset",-.09),
+            Map.of("earSeatWeight",1.1),Map.of("forceVisible",1))) {
             m.put("fitProfile",fit);write(p,m);assertThrows(IllegalArgumentException.class,()->discover());
         }
         assertEquals(0,products.count());

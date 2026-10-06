@@ -223,10 +223,16 @@ test('invalid matrix falls back to landmarks and lost tracking still holds then 
 
 test('head masks and lens guards enclose rear drawing and both temples are painted before the front', () => {
   const calls = [],
-    clips = [];
+    draws = [],
+    stack = [];
+  let headClipped = false;
   const ctx = {
-    save() {},
-    restore() {},
+    save() {
+      stack.push(headClipped);
+    },
+    restore() {
+      headClipped = stack.pop();
+    },
     translate() {},
     rotate() {},
     beginPath() {},
@@ -235,11 +241,12 @@ test('head masks and lens guards enclose rear drawing and both temples are paint
     lineTo() {},
     closePath() {},
     clip(rule) {
-      clips.push(rule);
+      if (rule === 'evenodd') headClipped = true;
     },
     transform() {},
     drawImage(img) {
       calls.push(img);
+      draws.push({ img, headClipped });
     },
   };
   const a = {
@@ -259,7 +266,9 @@ test('head masks and lens guards enclose rear drawing and both temples are paint
     rightTemple: part('right'),
   };
   drawEyewearRig(ctx, asset, a, transform, fit);
-  assert.ok(clips.filter((c) => c === 'evenodd').length === 1);
+  assert.ok(draws.some((d) => d.img === 'right' && d.headClipped));
+  assert.ok(draws.some((d) => d.img === 'right' && !d.headClipped));
+  assert.ok(draws.filter((d) => d.img !== 'right').every((d) => !d.headClipped));
   const firstFront = calls.indexOf('front');
   assert.ok(firstFront > 0);
   assert.ok(calls.slice(firstFront).every((c) => c === 'front'));
@@ -339,9 +348,9 @@ test('stable lateral mesh aggregates recover the same head dimensions under rigi
         c = Math.cos,
         s = Math.sin;
       const surface = Array.from({ length: 468 }, () => ({ x: 0, y: 0, z: 0 }));
-      for (const [i, id] of [127, 234, 93, 356, 454, 323].entries()) {
-        const x = i < 3 ? -0.5 : 0.5,
-          py = ((i % 3) - 0.5) * 0.06,
+      for (const [i, id] of [127, 234, 93, 356, 454, 323, 162, 389].entries()) {
+        const x = i < 3 || i === 6 ? -0.5 : 0.5,
+          py = i < 6 ? ((i % 3) - 0.5) * 0.06 : -0.09,
           z = 0.3;
         const yy = c(p) * py - s(p) * z,
           zz = s(p) * py + c(p) * z;
@@ -354,6 +363,7 @@ test('stable lateral mesh aggregates recover the same head dimensions under rigi
       const shape = estimateHeadShape(surface, yaw, pitch);
       close(shape.radius, 0.5);
       close(shape.sideDepth, 0.3);
+      close(shape.sideHeight, -0.03);
       // One unstable lateral vertex cannot determine a temple endpoint.
       surface[127] = { x: 10, y: 3, z: 10 };
       const noisy = estimateHeadShape(surface, yaw, pitch);
@@ -377,6 +387,59 @@ test('proximal wrap recedes in depth and fits narrow/wide heads without changing
         assert.ok(rig.templePoint(side, 0.52).x * side > Math.abs(h.x));
       }
     }
+});
+
+test('frontal wrap clears the hinge while posterior shafts seat on the upper head side for every product', () => {
+  for (const widthMultiplier of [0.9, 0.98, 1.05])
+    for (const sideHeight of [-0.12, -0.04, 0.04])
+      for (const templeVerticalOffset of [-0.01, 0.016]) {
+        const profile = {
+          widthMultiplier,
+          frontalVisibleFraction: 0.065,
+          earSeatOffset: -0.02,
+          earSeatWeight: 0.95,
+          templeVerticalOffset,
+        };
+        for (const yaw of [-30, -15, 0, 15, 30]) {
+          const rig = createEyewearRig(
+            {
+              ...anchor,
+              rawYawDegrees: yaw,
+              headShape: { radius: 0.5, sideDepth: 0.3, sideHeight },
+            },
+            transform,
+            profile,
+          );
+          for (const side of [-1, 1]) {
+            const hinge = rig.templePoint(side, 0),
+              root = rig.templePoint(side, rig.headFit.rootLength),
+              seat = rig.templePoint(side, 1),
+              shaft = rig.templePoint(side, rig.headFit.sideProgress);
+            close(root.y, hinge.y);
+            assert.ok(seat.y < hinge.y && seat.y >= hinge.y - 0.09);
+            assert.ok(shaft.y >= seat.y && shaft.y < hinge.y);
+            assert.ok(seat.x * side >= Math.abs(hinge.x));
+            if (yaw === 0) {
+              const h = rig.project(hinge),
+                r = rig.project(root);
+              assert.ok(((r.x - h.x) * side) / rig.physicalWidth >= 0.065 - 1e-8);
+              assert.ok(((r.x - h.x) * side) / rig.physicalWidth < 0.09);
+            }
+          }
+        }
+      }
+});
+
+test('upper side height uses head-local landmarks and rejects an isolated lower-face outlier', () => {
+  const surface = Array.from({ length: 468 }, () => ({ x: 0, y: 0, z: 0 }));
+  [127, 234, 93, 356, 454, 323].forEach((id, i) => {
+    surface[id] = { x: i < 3 ? -0.5 : 0.5, y: [-0.03, 0.03, 0.09][i % 3], z: 0.3 };
+  });
+  surface[162] = { x: -0.48, y: -0.09, z: 0.28 };
+  surface[389] = { x: 0.48, y: -0.09, z: 0.28 };
+  close(estimateHeadShape(surface).sideHeight, -0.03);
+  surface[93].y = 10;
+  close(estimateHeadShape(surface).sideHeight, -0.03);
 });
 
 test('real lens aperture extraction excludes exterior transparency and preserves hinge neighborhoods', () => {

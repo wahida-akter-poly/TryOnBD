@@ -148,7 +148,10 @@ export const sunglassesStyles = [
     templeSplay: 0.025,
     templeCurve: 0.065,
     templeRootLength: 0.18,
-    templeVerticalOffset: 0.012,
+    templeVerticalOffset: -0.006,
+    frontalVisibleFraction: 0.065,
+    earSeatOffset: -0.012,
+    earSeatWeight: 0.9,
     label: 'Modern Clear Frame',
     bridgePivot: { x: 0.5, y: 0.43 },
     hinges: { left: { x: 0.025, y: 0.22 }, right: { x: 0.975, y: 0.22 } },
@@ -204,6 +207,9 @@ export const eyewearAssetManifests = Object.freeze(
             templeCurve: style.templeCurve,
             templeRootLength: style.templeRootLength,
             templeVerticalOffset: style.templeVerticalOffset,
+            frontalVisibleFraction: style.frontalVisibleFraction,
+            earSeatOffset: style.earSeatOffset,
+            earSeatWeight: style.earSeatWeight,
           }),
         }),
       ]),
@@ -222,7 +228,7 @@ export function sunglassesAssetFor(product, style) {
       ? {
           leftTempleSrc: imported.leftTempleAsset,
           rightTempleSrc: imported.rightTempleAsset,
-          fit: imported.fitProfile,
+          fit: { ...eyewearAssetManifests[key]?.fit, ...imported.fitProfile },
         }
       : null
     : eyewearAssetManifests[key];

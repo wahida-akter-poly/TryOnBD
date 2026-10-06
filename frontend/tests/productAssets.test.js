@@ -184,6 +184,19 @@ test('all five real catalog packages use stable identities and the shared dynami
       assert.equal(resolved.fit.templeCurve, 0.065);
       assert.equal(resolved.fit.templeRootLength, 0.18);
       assert.deepEqual(resolved.fit.hinges, manifest.fitProfile.hinges);
+      // API and legacy asset-based resolution must use the same calibration.
+      const legacy = sunglassesAssetFor({ imageUrl });
+      for (const field of [
+        'templeDepth',
+        'templeSplay',
+        'templeCurve',
+        'templeRootLength',
+        'templeVerticalOffset',
+        'frontalVisibleFraction',
+        'earSeatOffset',
+        'earSeatWeight',
+      ])
+        assert.equal(legacy.fit[field], manifest.fitProfile[field]);
     }
     if (id === 1) assert.equal(product.shirtAR.asset, imageUrl);
     if (id === 4) assert.equal(manifest.style, 'SHORT');

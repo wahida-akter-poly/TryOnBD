@@ -161,3 +161,40 @@ Golden Frame imported through `npm run sync:products` as ID 6, seller 2/Anzara, 
 Verification adds actual photographic-pixel pose fixtures for both complete products, texture-seam attachment tests, 36 moving-pose/rotated-source pixel checks, source-axis validation, sync idempotency, live backend catalog/details/try-on flows, isolated commerce and role-management UI tests, and backend transactional commerce/management tests using Golden's real manifest. Live catalog tests do not create orders or change real stock. Generated captures are ignored under `frontend/artifacts/`.
 
 Physical webcam realism is still awaiting manual review. Open `/try-on?productId=6` and `/try-on?productId=2` with Camera. Test frontal, slow left/right turns, 15 and 20?30 degree yaw, left/right roll, slight upward/downward pitch, closer/farther movement, and quick left-centre-right reversals. Check that both small roots stay joined, the near arm follows the head, the far arm partially occludes and neither crosses a lens. Also briefly leave/re-enter view and compare a saved capture. Ear positions and hair are estimated rather than measured; photographic strips cannot recover a manufacturer's full solid geometry.
+
+## Frontal visibility and upper ear seating
+
+The shared rig now derives a seat height from the median of upper lateral oval vertices 127/162/234 and 356/389/454, after removing yaw and pitch. This height filters with the existing head dimensions. The photographed hinges and front projection remain unchanged. The shaft approaches the measured upper side rather than inheriting a downward hinge offset. Its final vertical target, including product calibration, is bounded to 0.01–0.08 frame widths above the hinge; `earSeatWeight` blends that target with hinge height. This also bounds older positive-drop API profiles.
+
+The previous proximal wrap used only `templeCurve * 0.7`; perspective contracted that small section and the posterior path folded inward by `templeCurve * 1.4`. Front-frame overlap and head depth could therefore leave only a tiny visible temple section. `frontalVisibleFraction` now defines a minimum projected outward root wrap in units of physical frame width, compensating for perspective in head coordinates. It is geometry, not a visibility/opacity override. The posterior path follows the skull radius with a gentler `templeCurve * 0.4` inset.
+
+WebGL still depth-tests every part against the actual face, posterior skull and measured lens apertures; temple opacity remains 1. Near/far exposure emerges continuously from the shared pose and depth. Canvas fallback applies the far-side silhouette to posterior strips only, preserving the exact proximal hinge seam while retaining lens clipping. Canvas head occlusion remains an approximation.
+
+The backend metadata validator accepts three additional eyewear-only values: `frontalVisibleFraction` (0.02–0.075), `earSeatOffset` (-0.08–0.08 frame widths), and `earSeatWeight` (0–1). API metadata remains authoritative. For known legacy front assets, missing fit values inherit their existing asset calibration; unrelated/external URLs do not acquire substitute temples.
+
+Final package calibration:
+
+| Parameter | Modern Clear Frame | Golden Frame |
+| --- | --- | --- |
+| Front width multiplier | 0.92 | 0.98 |
+| Bridge pivot | (0.5, 0.43) | (0.5, 0.3) |
+| Left/right hinge | (0.025, 0.22) / (0.975, 0.22) | (0.028, 0.333) / (0.970, 0.333) |
+| Temple depth / splay | 0.62 / 0.025 | 0.62 / 0.025 |
+| Curve / root fraction | 0.065 / 0.18 | 0.055 / 0.20 |
+| Vertical target offset | -0.006 | -0.012 |
+| Frontal wrap fraction | 0.065 | 0.055 |
+| Ear seat offset / weight | -0.012 / 0.90 | -0.020 / 0.95 |
+
+All existing front and transparent temple PNGs are reused unchanged. Golden's measured photographic shaft anchors and lens material calibration are retained. No cutouts, generated artwork or Classic Aviator temples were added.
+
+Controlled real-mesh pixel checks now cover 13 poses per product: frontal, left/right 15/25/30 degrees, roll +/-10 degrees, pitch +/-10 degrees and distance scales 0.75/1.30. The 36 rotated-source/moving-pose checks retain their original hinge assertions. Additional unit checks cover a third generic metadata profile, upper-side landmark recovery through yaw/pitch, lower-contour outliers, legacy positive drop values and Canvas proximal-root preservation. Only Modern Clear and Golden have genuine full-eyewear packages; there is no third real full-eyewear product to validate.
+
+Reference frontal temple-only alpha counts are Modern Clear 427/462 pixels and Golden 439/192 pixels (left/right). All controlled poses retain zero geometric hinge separation and zero lens intrusion. Pixel counts include isolated real temple textures, not a claim of physical-camera realism. Production tests exercise each product's storefront, details, photo, simulated camera, capture, export and hidden diagnostics.
+
+The local catalog sync dry run reports updates only for the two eyewear profiles and leaves the other four products unchanged. Applying the database updates was rejected by automatic approval review and was not performed. The committed package profiles can be applied through the existing sync after approval; live verification therefore uses the current persisted profiles plus the new shared fitting logic.
+
+Final verification: 163 frontend unit tests, 45 production browser tests, 6 read-only live API/browser tests and 45 backend tests pass. The production build and changed-source formatting checks succeed. The focused eyewear browser run also passes all 10 tests. Production/live runs reuse a task-started preview through ignored review configurations to avoid the local Windows managed-server teardown hang.
+
+The legacy `tests/browser/sunglasses-lifecycle.spec.js` fixture still returns an empty Product API object and waits for the removed “Modern Clear Frame” picker button at line 123. Its first test times out on both the unchanged branch archive and the modified code; the remaining legacy fixture cases were not completed. The current production camera tests pass for both products. An initial choker checkout timeout passes on isolated recheck and in the final complete production run.
+
+Physical webcam movements, anatomical ear tracking, hair occlusion and varied-person realism remain unverified. Controlled poses and simulated camera streams do not replace that acceptance review. Catalog before/after snapshots confirm no database product changes during verification.

@@ -6,11 +6,16 @@ export const eyewearPoses = [
   { name: 'frontal', yaw: 0, pitch: 0, roll: 0 },
   { name: 'left-15', yaw: -15, pitch: 0, roll: 0 },
   { name: 'left-30', yaw: -30, pitch: 0, roll: 0 },
+  { name: 'left-25', yaw: -25, pitch: 0, roll: 0 },
   { name: 'right-15', yaw: 15, pitch: 0, roll: 0 },
   { name: 'right-30', yaw: 30, pitch: 0, roll: 0 },
+  { name: 'right-25', yaw: 25, pitch: 0, roll: 0 },
   { name: 'roll', yaw: 0, pitch: 0, roll: 10 },
+  { name: 'roll-left', yaw: 0, pitch: 0, roll: -10 },
   { name: 'up', yaw: 0, pitch: 10, roll: 0 },
   { name: 'down', yaw: 0, pitch: -10, roll: 0 },
+  { name: 'farther', yaw: 0, pitch: 0, roll: 0, scale: 0.75 },
+  { name: 'closer', yaw: 0, pitch: 0, roll: 0, scale: 1.3 },
 ];
 export function poseFixture(base, pose, fit = {}) {
   const rad = Math.PI / 180,
@@ -22,7 +27,7 @@ export function poseFixture(base, pose, fit = {}) {
     sr = Math.sin(pose.roll * rad);
   const by = base.rawYawDegrees * rad,
     bp = (base.pitchDegrees ?? 0) * rad;
-  const sourceWidth = base.width / Math.max(0.55, Math.cos(by));
+  const sourceWidth = (base.width / Math.max(0.55, Math.cos(by))) * (pose.scale ?? 1);
   const frameWidth = sourceWidth * (fit.widthMultiplier ?? 0.92),
     distance = fit.cameraDistance ?? base.cameraDistance;
   const points = base.faceSurface.map((p) => {

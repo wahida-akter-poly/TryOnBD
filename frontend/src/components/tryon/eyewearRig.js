@@ -13,6 +13,9 @@ export const eyewearRigConfig = Object.freeze({
   templeCurve: 0.065,
   templeRootLength: 0.18,
   templeDrop: 0.012,
+  frontalVisibleFraction: 0.055,
+  earSeatOffset: -0.015,
+  earSeatWeight: 0.85,
   maxYawDegrees: 65,
   maxPitchDegrees: 40,
   textureStrips: 16,
@@ -79,17 +82,41 @@ export function createEyewearRig(anchor, transform, fit = {}) {
   const curve = clamp(fit.templeCurve ?? eyewearRigConfig.templeCurve, 0.02, 0.12);
   const rootLength = clamp(fit.templeRootLength ?? eyewearRigConfig.templeRootLength, 0.08, 0.3);
   const drop = clamp(fit.templeVerticalOffset ?? eyewearRigConfig.templeDrop, -0.08, 0.08);
+  const frontalVisibleFraction = clamp(
+    fit.frontalVisibleFraction ?? eyewearRigConfig.frontalVisibleFraction,
+    0.02,
+    0.075,
+  );
+  const earSeatOffset = clamp(fit.earSeatOffset ?? eyewearRigConfig.earSeatOffset, -0.08, 0.08);
+  const earSeatWeight = clamp(fit.earSeatWeight ?? eyewearRigConfig.earSeatWeight, 0, 1);
   const sideProgress = clamp(sideDepth / depth, 0.4, 0.75);
   // Three cubic segments: hinge wrap, side shaft, posterior/ear-direction end.
   // Length and curvature live in HEAD coordinates and never change with yaw.
   const paths = localHinges.map((h, i) => {
     const side = i ? 1 : -1,
-      rootX = Math.abs(h.x) + curve * 0.7;
+      // Compensate perspective once in head coordinates. This creates a small
+      // real wrap, not yaw-dependent scaling or a depth/opacity exception.
+      rootX = Math.max(
+        Math.abs(h.x) + curve * 0.7,
+        ((Math.abs(h.x) + frontalVisibleFraction) * (distance + depth * rootLength)) / distance,
+      );
+    const measuredSeat =
+      (anchor.headShape?.sideHeight ?? (h.y - 0.025) / faceToFrame) * faceToFrame;
+    // Bound the final offset as well: older profiles with a positive drop must
+    // not pull the shaft below the hinge/upper-ear band.
+    const seatY = clamp(measuredSeat + earSeatOffset + drop, h.y - 0.08, h.y - 0.01);
+    const earY = h.y + (seatY - h.y) * earSeatWeight;
     return [
       h,
       { x: side * rootX, y: h.y, z: depth * rootLength },
-      { x: side * Math.max(rootX, radius + splay), y: h.y + drop * 0.45, z: depth * sideProgress },
-      { x: side * (radius - curve * 1.4), y: h.y + drop, z: depth },
+      {
+        x: side * Math.max(rootX, radius + splay),
+        y: h.y + (earY - h.y) * 0.8,
+        z: depth * sideProgress,
+      },
+      // Follow the skull side to the ear seat; the earlier deep inward fold
+      // shortened frontal projection and pulled the photographed hook down.
+      { x: side * Math.max(Math.abs(h.x), radius - curve * 0.4), y: earY, z: depth },
     ];
   });
   const templePoint = (side, u, v = 0) => {
@@ -193,7 +220,17 @@ export function createEyewearRig(anchor, transform, fit = {}) {
     templePoint,
     depth,
     headShell: anchor.faceSurface ? headShell : [],
-    headFit: { radius, sideDepth, curve, rootLength, drop },
+    headFit: {
+      radius,
+      sideDepth,
+      curve,
+      rootLength,
+      drop,
+      sideProgress,
+      frontalVisibleFraction,
+      earSeatOffset,
+      earSeatWeight,
+    },
     paths,
   };
 }
@@ -300,9 +337,27 @@ export function drawEyewearRig(ctx, asset, anchor, transform, fit = {}) {
       }
       ctx.clip('evenodd');
     }
-    if (!temple.near) clipOutsideHead(ctx, contour, transform.width * 8, transform.height * 10);
     ctx.globalAlpha = transform.opacity * temple.opacity;
-    drawTempleQuad(ctx, part, meshes.get(temple.side));
+    const mesh = meshes.get(temple.side);
+    if (!temple.near && contour?.length && part.visibleHinge && part.visibleTip) {
+      const hinge = part.visibleHinge.x,
+        dx = part.visibleTip.x - hinge;
+      mesh.strips.forEach((strip, i) => {
+        const u = (mesh.columns[i] + mesh.columns[i + 1]) / 2;
+        const longitudinal = (part.bounds.x + u * part.bounds.width - hinge) / dx;
+        ctx.save();
+        // A 2D silhouette has no depth. Apply it only to the posterior shaft,
+        // otherwise it removes the attached root even in a frontal pose.
+        if (longitudinal > rig.headFit.rootLength)
+          clipOutsideHead(ctx, contour, transform.width * 8, transform.height * 10);
+        drawTempleQuad(ctx, part, {
+          ...mesh,
+          strips: [strip],
+          columns: mesh.columns.slice(i, i + 2),
+        });
+        ctx.restore();
+      });
+    } else drawTempleQuad(ctx, part, mesh);
     ctx.restore();
   }
   ctx.globalAlpha = transform.opacity;
