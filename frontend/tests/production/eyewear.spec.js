@@ -16,7 +16,7 @@ test.beforeAll(async () => {
       resolveDir: process.cwd(),
       contents: `
       import { eyewearPoses, poseFixture } from './tests/fixtures/eyewearPose.js';
-      import { faceMeshTriangles } from './src/components/tryon/eyewearWebGL.js';
+      import { faceMeshTriangles, renderEyewearWebGL } from './src/components/tryon/eyewearWebGL.js';
       import { drawTempleQuad } from './src/components/tryon/templeGeometry.js';
       import { acquireFaceLandmarker } from './src/services/faceLandmarker.js';
       import { loadGlassesAssembly, loadAccessoryAsset, inspectTemple } from './src/components/tryon/accessoryAssets.js';
@@ -109,7 +109,11 @@ test.beforeAll(async () => {
           const mctx=mask.getContext('2d');mctx.translate(transform.x,transform.y);mctx.rotate(transform.angle);
           drawTempleQuad(mctx,asset.lensOccluder,rig.front.mesh);
           const lens=mctx.getImageData(0,0,canvas.width,canvas.height).data;
-          const counts={left:0,right:0,intrusion:0},roots={},unmasked={},headHidden={},headOnly={};
+          mctx.setTransform(1,0,0,1,0,0);mctx.clearRect(0,0,canvas.width,canvas.height);
+          mctx.translate(transform.x,transform.y);mctx.rotate(transform.angle);
+          drawTempleQuad(mctx,asset,rig.front.mesh);
+          const front=mctx.getImageData(0,0,canvas.width,canvas.height).data;
+          const counts={left:0,right:0,intrusion:0},roots={},unmasked={},headHidden={},headOnly={},exposed={},exposedLength={};
           let minX=Infinity,maxX=-Infinity;
           for(const side of [-1,1]) {
             const name=side<0?'left':'right';
@@ -118,7 +122,8 @@ test.beforeAll(async () => {
             drawAccessory(ctx,solo,[anchor],controls,image.width,image.height,fit);
             const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;
             const hinge=rig.screen(side<0?rig.front.leftHinge:rig.front.rightHinge);
-            roots[name]=0;
+            roots[name]=0;exposed[name]=0;
+            let exposedMin=Infinity,exposedMax=-Infinity;
             for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++) {
               const i=(y*canvas.width+x)*4+3;
               if(pixels[i]<20)continue;
@@ -127,7 +132,11 @@ test.beforeAll(async () => {
               if(Math.hypot(x+.5-hinge.x,y+.5-hinge.y)<transform.width*.028) roots[name]++;
               const dx=x+.5-transform.x,dy=y+.5-transform.y,lx=dx*Math.cos(transform.angle)+dy*Math.sin(transform.angle);
               minX=Math.min(minX,lx);maxX=Math.max(maxX,lx);
+              if(front[i]<20&&lens[i]<20) {
+                exposed[name]++;exposedMin=Math.min(exposedMin,lx);exposedMax=Math.max(exposedMax,lx);
+              }
             }
+            exposedLength[name]=Number.isFinite(exposedMin)?(exposedMax-exposedMin)/transform.width:0;
             ctx.clearRect(0,0,canvas.width,canvas.height);
             drawAccessory(ctx,{...solo,lensOccluder:null},[anchor],controls,image.width,image.height,fit);
             const headPixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;
@@ -180,10 +189,35 @@ test.beforeAll(async () => {
           drawAccessory(ctx,asset,[anchor],controls,image.width,image.height,fit);
           canvas.dataset.rigPose=pose.name;canvas.style.width='720px';canvas.style.height='auto';
           document.body.append(canvas);
-          results.push({pose,headFit:rig.headFit,headShape:base.headShape,baseYaw:base.rawYawDegrees,counts,roots,unmasked,headHidden,headOnly,framePixels,unmaskedFrame,temples,renderer:canvas.dataset.eyewearRenderer,wingExtent:Number.isFinite(minX)?Math.max(0,
+          results.push({pose,headFit:rig.headFit,headShape:base.headShape,baseYaw:base.rawYawDegrees,counts,roots,exposed,exposedLength,unmasked,headHidden,headOnly,framePixels,unmaskedFrame,temples,renderer:canvas.dataset.eyewearRenderer,wingExtent:Number.isFinite(minX)?Math.max(0,
             rig.front.leftHinge.x-minX,maxX-rig.front.rightHinge.x)/transform.width:0});
         }
-        return {actualMatrix:true,assets:{left:asset.leftTemple.inspection,right:asset.rightTemple.inspection,lenses:asset.lensOutlines.length},results};
+        // Force every head triangle in front of the product over the viewport.
+        // Only the protected prefix may survive; the posterior must be hidden.
+        const stressAnchor={...poseFixture(base,eyewearPoses[0],fit).anchor,
+          faceSurface:Array.from({length:468},(_,i)=>({x:i%4<2?-4:4,y:i%2?-4:4,z:-.5}))};
+        const stressTransform=accessoryTransform(stressAnchor,{...defaultControls(),mirror:false},image.width,image.height,asset.bounds.width/asset.bounds.height,fit);
+        const stressRig=createEyewearRig(stressAnchor,stressTransform,fit),occlusionStress={};
+        const stressCanvas=document.createElement('canvas');stressCanvas.width=image.width;stressCanvas.height=image.height;
+        const stressCtx=stressCanvas.getContext('2d',{willReadFrequently:true});
+        for(const side of [-1,1]) {
+          const part=side<0?asset.leftTemple:asset.rightTemple,mesh=rigidTempleMesh(stressRig,stressRig.temples.find(t=>t.side===side),part);
+          const solo={...asset,leftTemple:side<0?part:null,rightTemple:side>0?part:null};
+          const pixels={};
+          for(const mode of ['full','proximal','posterior']) {
+            stressCtx.clearRect(0,0,image.width,image.height);
+            const section={...mesh,proximal:mode==='posterior'?null:mesh.proximal,posterior:mode==='proximal'?null:mesh.posterior};
+            if(!renderEyewearWebGL(stressCtx,solo,stressAnchor,stressTransform,stressRig,new Map([[side,section]])))throw new Error('WebGL stress render unavailable');
+            pixels[mode]=stressCtx.getImageData(0,0,image.width,image.height).data;
+          }
+          let full=0,rear=0,mismatch=0;
+          for(let i=3;i<pixels.full.length;i+=4) {
+            if(pixels.full[i]>=20)full++;if(pixels.posterior[i]>=20)rear++;
+            if(pixels.full[i]!==pixels.proximal[i])mismatch++;
+          }
+          occlusionStress[side<0?'left':'right']={full,rear,mismatch};
+        }
+        return {actualMatrix:true,assets:{left:asset.leftTemple.inspection,right:asset.rightTemple.inspection,lenses:asset.lensOutlines.length},occlusionStress,results};
 
       };
     `,
@@ -243,6 +277,11 @@ test('real photographed temples fit a coherently posed head at frontal, yaw, pit
       .locator(`canvas[data-rig-pose="${r.pose.name}"]`)
       .screenshot({ path: `artifacts/eyewear-head-side-${r.pose.name}.png` });
   expect(data.assets.lenses).toBe(2);
+  for (const side of ['left', 'right']) {
+    expect(data.occlusionStress[side].full).toBeGreaterThan(80);
+    expect(data.occlusionStress[side].rear).toBe(0);
+    expect(data.occlusionStress[side].mismatch).toBe(0);
+  }
   for (const part of [data.assets.left, data.assets.right]) {
     expect(part.decoded).toBe(true);
     expect(part.visiblePixels).toBeGreaterThan(20000);
@@ -263,6 +302,10 @@ test('real photographed temples fit a coherently posed head at frontal, yaw, pit
       expect(t.seatRise).toBeGreaterThan(-0.1);
     }
     if (r.pose.yaw === 0) {
+      for (const side of ['left', 'right']) {
+        expect(r.exposed[side]).toBeGreaterThan(120);
+        expect(r.exposedLength[side]).toBeGreaterThan(0.05);
+      }
       expect(r.counts.left).toBeGreaterThan(120);
       expect(r.counts.right).toBeGreaterThan(120);
       expect(r.roots.left).toBeGreaterThan(12);
@@ -292,6 +335,8 @@ test('real photographed temples fit a coherently posed head at frontal, yaw, pit
       far = sign > 0 ? 'right' : 'left';
     expect(fifteen.counts[near]).toBeGreaterThan(frontal.counts[near]);
     expect(thirty.counts[near]).toBeGreaterThan(fifteen.counts[near]);
+    expect(fifteen.exposedLength[near]).toBeGreaterThan(frontal.exposedLength[near]);
+    expect(thirty.exposedLength[near]).toBeGreaterThan(fifteen.exposedLength[near]);
     expect(thirty.counts[far] / thirty.unmasked[far]).toBeLessThan(
       fifteen.counts[far] / fifteen.unmasked[far],
     );
@@ -501,6 +546,11 @@ test('Golden Frame genuine package fits yaw, roll, pitch and distance with its o
   await page.addScriptTag({ content: harness });
   const data = await page.evaluate((p) => window.checkEyewear(p), product);
   console.log('Golden Frame pose pixel checks:', JSON.stringify(data));
+  for (const side of ['left', 'right']) {
+    expect(data.occlusionStress[side].full).toBeGreaterThan(80);
+    expect(data.occlusionStress[side].rear).toBe(0);
+    expect(data.occlusionStress[side].mismatch).toBe(0);
+  }
   for (const r of data.results) {
     await page
       .locator('canvas[data-rig-pose="' + r.pose.name + '"]')
@@ -517,6 +567,10 @@ test('Golden Frame genuine package fits yaw, roll, pitch and distance with its o
     for (const side of ['left', 'right'])
       expect(r.roots[side], JSON.stringify(r)).toBeGreaterThan(12);
     if (r.pose.yaw === 0) {
+      for (const side of ['left', 'right']) {
+        expect(r.exposed[side]).toBeGreaterThan(60);
+        expect(r.exposedLength[side]).toBeGreaterThan(0.04);
+      }
       expect(r.counts.left).toBeGreaterThan(80);
       expect(r.counts.right).toBeGreaterThan(80);
       expect(r.wingExtent).toBeLessThan(0.11);
@@ -536,5 +590,7 @@ test('Golden Frame genuine package fits yaw, roll, pitch and distance with its o
       thirty = data.results.find((r) => r.pose.yaw === 30 * sign);
     expect(fifteen.counts[near]).toBeGreaterThan(frontal.counts[near]);
     expect(thirty.counts[near]).toBeGreaterThan(fifteen.counts[near]);
+    expect(fifteen.exposedLength[near]).toBeGreaterThan(frontal.exposedLength[near]);
+    expect(thirty.exposedLength[near]).toBeGreaterThan(fifteen.exposedLength[near]);
   }
 });

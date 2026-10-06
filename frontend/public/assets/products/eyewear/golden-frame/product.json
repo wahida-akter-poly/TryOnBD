@@ -25,13 +25,13 @@
         "y": 0.333
       }
     },
-    "templeDepth": 0.62,
+    "templeDepth": 0.78,
     "templeSplay": 0.025,
     "templeCurve": 0.055,
-    "templeRootLength": 0.2,
-    "templeVerticalOffset": -0.012,
-    "frontalVisibleFraction": 0.055,
-    "earSeatOffset": -0.02,
+    "templeRootLength": 0.3,
+    "templeVerticalOffset": -0.018,
+    "frontalVisibleFraction": 0.07,
+    "earSeatOffset": -0.028,
     "earSeatWeight": 0.95,
     "opacity": 100,
     "lensSurface": {

@@ -266,6 +266,7 @@ export function renderEyewearWebGL(ctx, asset, anchor, transform, rig, meshes) {
         renderer.textures.delete(image);
       }
     const draw = (mesh, part, alpha) => {
+      if (!mesh) return;
       gl.bindTexture(gl.TEXTURE_2D, textureFor(renderer, part.image));
       gl.uniform1f(uniforms.alpha, alpha);
       const data = planeVertices(mesh, part, rig, transform, width, height);
@@ -275,12 +276,39 @@ export function renderEyewearWebGL(ctx, asset, anchor, transform, rig, meshes) {
     for (const temple of rig.temples) {
       const part = temple.side < 0 ? asset.leftTemple : asset.rightTemple;
       if (part && temple.opacity > 0)
-        draw(meshes.get(temple.side), part, transform.opacity * temple.opacity);
+        draw(meshes.get(temple.side).posterior, part, transform.opacity * temple.opacity);
     }
-    // The front uses the same real depth test as the temples. LEQUAL allows
-    // coplanar aperture/rim edges; no product part bypasses face/head depth.
+    // Front fit remains on the original face/head depth buffer.
     gl.depthMask(false);
     draw(rig.front.mesh, asset, transform.opacity);
+    // Hybrid proximal pass: only the calibrated root section is protected from
+    // face/head depth. Real front pixels and lens apertures still occlude it.
+    // The far-side section shrinks smoothly with yaw at an exact texture seam.
+    gl.depthMask(true);
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.colorMask(false, false, false, false);
+    gl.disable(gl.BLEND);
+    gl.uniform1i(uniforms.depthOnly, 1);
+    gl.uniform1i(uniforms.aperture, 1);
+    const guard = (part) => {
+      if (!part) return;
+      gl.bindTexture(gl.TEXTURE_2D, textureFor(renderer, part.image));
+      const data = planeVertices(rig.front.mesh, part, rig, transform, width, height);
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, data.length / 7);
+    };
+    guard(asset);
+    guard(asset.lensOccluder);
+    gl.colorMask(true, true, true, true);
+    gl.depthMask(false);
+    gl.uniform1i(uniforms.depthOnly, 0);
+    gl.uniform1i(uniforms.aperture, 0);
+    gl.enable(gl.BLEND);
+    for (const temple of rig.temples) {
+      const part = temple.side < 0 ? asset.leftTemple : asset.rightTemple;
+      if (part && temple.opacity > 0)
+        draw(meshes.get(temple.side).proximal, part, transform.opacity * temple.opacity);
+    }
     if (gl.isContextLost()) return false;
     ctx.save();
     ctx.globalAlpha = 1;

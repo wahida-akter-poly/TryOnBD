@@ -119,8 +119,43 @@ test('frontal and near-frontal shafts point backward with a short tucked project
           ),
         ) / transform.width;
       assert.ok(extent > 0.005 && extent < 0.09, `${yaw}: root/wing extent ${extent}`);
-      close(t.physicalLength / rig.physicalWidth, 0.62);
+      close(t.physicalLength / rig.physicalWidth, fit.templeDepth);
     }
+  }
+});
+
+test('proximal protection recedes smoothly on the far side without deforming either temple', () => {
+  let previous;
+  for (let yaw = -40; yaw <= 40; yaw += 0.25) {
+    const rig = createEyewearRig({ ...anchor, rawYawDegrees: yaw }, transform, fit);
+    for (const temple of rig.temples) {
+      assert.ok(temple.proximalVisibleFraction > 0);
+      assert.ok(temple.proximalVisibleFraction <= fit.templeRootLength);
+      if (temple.side * yaw <= 0) close(temple.proximalVisibleFraction, fit.templeRootLength);
+      const mesh = rigidTempleMesh(rig, temple, part(temple.side < 0 ? 'left' : 'right'));
+      assert.equal(mesh.proximal.strips.length + mesh.posterior.strips.length, mesh.strips.length);
+      for (const section of [mesh.proximal, mesh.posterior]) {
+        const start = mesh.columns.indexOf(section.columns[0]);
+        assert.deepEqual(
+          section.columns,
+          mesh.columns.slice(start, start + section.strips.length + 1),
+        );
+        assert.deepEqual(section.strips, mesh.strips.slice(start, start + section.strips.length));
+      }
+      const source = part(temple.side < 0 ? 'left' : 'right');
+      const seam =
+        (source.visibleHinge.x +
+          temple.proximalVisibleFraction * (source.visibleTip.x - source.visibleHinge.x) -
+          source.bounds.x) /
+        source.bounds.width;
+      assert.ok(mesh.columns.some((u) => Math.abs(u - seam) < 1e-10));
+      if (previous) {
+        const old = previous.temples.find((t) => t.side === temple.side);
+        assert.ok(Math.abs(old.proximalVisibleFraction - temple.proximalVisibleFraction) < 0.003);
+        assert.deepEqual(rig.paths, previous.paths);
+      }
+    }
+    previous = rig;
   }
 });
 
@@ -383,7 +418,7 @@ test('proximal wrap recedes in depth and fits narrow/wide heads without changing
         const h = rig.templePoint(side, 0),
           p = rig.templePoint(side, fit.templeRootLength);
         assert.ok(p.z - h.z > Math.abs(p.x - h.x));
-        close(rig.temples[0].physicalLength / t.width, 0.62);
+        close(rig.temples[0].physicalLength / t.width, fit.templeDepth);
         assert.ok(rig.templePoint(side, 0.52).x * side > Math.abs(h.x));
       }
     }

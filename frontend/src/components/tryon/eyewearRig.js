@@ -16,6 +16,8 @@ export const eyewearRigConfig = Object.freeze({
   frontalVisibleFraction: 0.055,
   earSeatOffset: -0.015,
   earSeatWeight: 0.85,
+  farRootOcclusionDegrees: 35,
+  farRootRetention: 0.12,
   maxYawDegrees: 65,
   maxPitchDegrees: 40,
   textureStrips: 16,
@@ -95,7 +97,7 @@ export function createEyewearRig(anchor, transform, fit = {}) {
   const paths = localHinges.map((h, i) => {
     const side = i ? 1 : -1,
       // Compensate perspective once in head coordinates. This creates a small
-      // real wrap, not yaw-dependent scaling or a depth/opacity exception.
+      // bounded wrap before projection; it never widens independently with yaw.
       rootX = Math.max(
         Math.abs(h.x) + curve * 0.7,
         ((Math.abs(h.x) + frontalVisibleFraction) * (distance + depth * rootLength)) / distance,
@@ -179,6 +181,13 @@ export function createEyewearRig(anchor, transform, fit = {}) {
     mesh: frontMesh,
   };
   const nearSide = yaw > 0 ? -1 : 1;
+  // Protect a calibrated longitudinal section, not an entire arm. On the far
+  // side the exposed section recedes continuously into the head with yaw.
+  const proximalVisibleFraction = (side) => {
+    const farTurn = clamp((side * degrees) / eyewearRigConfig.farRootOcclusionDegrees, 0, 1);
+    const occlusion = farTurn * farTurn * (3 - 2 * farTurn);
+    return rootLength * (1 - (1 - eyewearRigConfig.farRootRetention) * occlusion);
+  };
   const temples = [-nearSide, nearSide].map((side) => {
     const hinge = hinges[side < 0 ? 0 : 1],
       target = project(templePoint(side, 1));
@@ -201,6 +210,7 @@ export function createEyewearRig(anchor, transform, fit = {}) {
       physicalLength: depth * physicalWidth,
       projectedLengthRatio: length / transform.width,
       opacity,
+      proximalVisibleFraction: proximalVisibleFraction(side),
       angle: Math.atan2(vector.y, vector.x),
       assetAngle: 0,
       absYaw: Math.abs(degrees),
@@ -268,6 +278,7 @@ export function rigidTempleMesh(rig, temple, part) {
   const seams = [
     0,
     rig.headFit.rootLength,
+    temple.proximalVisibleFraction,
     Math.min(0.75, Math.max(0.4, rig.headFit.sideDepth / rig.depth)),
     1,
   ].map((t) => (hinge.x + t * dx - b.x) / b.width);
@@ -283,8 +294,28 @@ export function rigidTempleMesh(rig, temple, part) {
     eyewearRigConfig.textureStrips,
     seams,
   );
+  const proximal = [],
+    posterior = [];
+  mesh.strips.forEach((strip, i) => {
+    const u = (mesh.columns[i] + mesh.columns[i + 1]) / 2;
+    const longitudinal = (b.x + u * b.width - hinge.x) / dx;
+    (longitudinal <= temple.proximalVisibleFraction ? proximal : posterior).push(i);
+  });
+  const section = (indices) => {
+    if (!indices.length) return null;
+    const start = indices[0],
+      end = indices.at(-1) + 1;
+    const strips = mesh.strips.slice(start, end);
+    return {
+      strips,
+      columns: mesh.columns.slice(start, end + 1),
+      corners: [strips[0][0], strips.at(-1)[1], strips.at(-1)[2], strips[0][3]],
+    };
+  };
   return {
     ...mesh,
+    proximal: section(proximal),
+    posterior: section(posterior),
     control: temple.target,
     hinge: rig.project(rig.templePoint(temple.side, 0)),
     tip: rig.project(rig.templePoint(temple.side, 1, (tip.y - hinge.y) / Math.abs(dx))),
@@ -339,25 +370,11 @@ export function drawEyewearRig(ctx, asset, anchor, transform, fit = {}) {
     }
     ctx.globalAlpha = transform.opacity * temple.opacity;
     const mesh = meshes.get(temple.side);
-    if (!temple.near && contour?.length && part.visibleHinge && part.visibleTip) {
-      const hinge = part.visibleHinge.x,
-        dx = part.visibleTip.x - hinge;
-      mesh.strips.forEach((strip, i) => {
-        const u = (mesh.columns[i] + mesh.columns[i + 1]) / 2;
-        const longitudinal = (part.bounds.x + u * part.bounds.width - hinge) / dx;
-        ctx.save();
-        // A 2D silhouette has no depth. Apply it only to the posterior shaft,
-        // otherwise it removes the attached root even in a frontal pose.
-        if (longitudinal > rig.headFit.rootLength)
-          clipOutsideHead(ctx, contour, transform.width * 8, transform.height * 10);
-        drawTempleQuad(ctx, part, {
-          ...mesh,
-          strips: [strip],
-          columns: mesh.columns.slice(i, i + 2),
-        });
-        ctx.restore();
-      });
-    } else drawTempleQuad(ctx, part, mesh);
+    ctx.save();
+    if (!temple.near) clipOutsideHead(ctx, contour, transform.width * 8, transform.height * 10);
+    if (mesh.posterior) drawTempleQuad(ctx, part, mesh.posterior);
+    ctx.restore();
+    if (mesh.proximal) drawTempleQuad(ctx, part, mesh.proximal);
     ctx.restore();
   }
   ctx.globalAlpha = transform.opacity;
